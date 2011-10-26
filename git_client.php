@@ -398,11 +398,59 @@ class git_client_class
 			switch($type)
 			{
 				case 1:
+					if(!$this->UnpackCompressedData($size, $object))
+						return(0);
+					$commit = array();
+					$l = strlen($object);
+					for($d = 0; $d < $l && $object[$d] !== "\n";)
+					{
+						$s = $d + strcspn($object, ' ', $d);
+						$key = substr($object, $d, $s - $d);
+						++$s;
+						$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+						if($object[$d] === "\n")
+							++$d;
+					}
+					if($object[$d] === "\n")
+						++$d;
+					$commit['Body'] = substr($object, $d);
+					$this->OutputDebug(print_r($commit, 1));
+					break;
 				case 2:
+					if(!$this->UnpackCompressedData($size, $object))
+						return(0);
+					$tree = array();
+					$l = strlen($object);
+					for($d = 0; $d < $l;)
+					{
+						$s = $d + strcspn($object, ' ', $d);
+						if($s == $l)
+							return($this->SetError('could not extract the tree element mode', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+						$mode = substr($object, $d, $s - $d);
+						++$s;
+						$d = $s + strcspn($object, "\0", $s);
+						if($s == $l)
+							return($this->SetError('could not extract the tree element name', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+						$name = substr($object, $s, $d - $s);
+						++$d;
+						$id = substr($object, $d, 20);
+						$d += 20;
+						if($d > $l)
+							return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+						for($hash = '', $s = 0; $s < 20; ++$s)
+							$hash .= sprintf('%02x', Ord($id[$s]));
+						$tree[$hash] = array(
+							'mode'=>$mode,
+							'name'=>$name
+						);
+					}
+					$this->OutputDebug(print_r($tree, 1));
+					break;
 				case 3:
 				case 4:
 					if(!$this->UnpackCompressedData($size, $object))
 						return(0);
+					$this->OutputDebug($object);
 					break;
 				case 6:
 					if(!$this->UnpackByte($head))
