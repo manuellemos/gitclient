@@ -178,6 +178,11 @@ class git_client_class
 		return(1);
 	}
 
+	Function ObjectHash($type, $object)
+	{
+		return(sha1($type.' '.strlen($object)."\0".$object));
+	}
+
 	Function GetUploadPack(&$upload_pack)
 	{
 		if(!$this->GetRequest($this->repository.'/info/refs?service=git-upload-pack'))
@@ -222,14 +227,6 @@ class git_client_class
 
 	Function ReadPack($length, &$data)
 	{
-/*
-		if(IsSet($this->fake_pack))
-		{
-			if(!($data = fread($this->fake_pack, $length)))
-				return($this->SetError('could not read the fack upload pack file'));
-			return(1);
-		}
-*/
 		if(strlen($this->error = $this->http->ReadReplyBody($data, $length)))
 			return($this->SetHTTPErrorCode());
 		return(1);
@@ -342,17 +339,153 @@ class git_client_class
 		return(1);
 	}
 
+	Function UnpackObject(&$objects)
+	{
+		if(!$this->UnpackByte($head))
+			return(0);
+		$header = $head;
+		$shift = 4;
+		$type = ($head & 0x70) >> 4;
+		$size = $head & 0xF;
+		while($head & 0x80)
+		{
+			if(!$this->UnpackByte($head))
+				return(0);
+			$header .= $head;
+			$size += ($head & 0x7F) << $shift;
+			$shift += 7;
+		}
+		$this->OutputDebug('Type '.$type.' Size '.$size);
+		switch($type)
+		{
+			case 1:
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				$commit = array();
+				$l = strlen($object);
+				for($d = 0; $d < $l && $object[$d] !== "\n";)
+				{
+					$s = $d + strcspn($object, ' ', $d);
+					$key = substr($object, $d, $s - $d);
+					++$s;
+					$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+					if($object[$d] === "\n")
+						++$d;
+				}
+				if($object[$d] === "\n")
+					++$d;
+				$commit['Body'] = substr($object, $d);
+				$hash = $this->ObjectHash('commit', $object);
+				$this->OutputDebug($hash.' '.print_r($commit, 1));
+				$objects[$hash] = array(
+					'type'=>$type,
+					'data'=>$object
+				);
+				break;
+			case 2:
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				$tree = array();
+				$l = strlen($object);
+				for($d = 0; $d < $l;)
+				{
+					$s = $d + strcspn($object, ' ', $d);
+					if($s == $l)
+						return($this->SetError('could not extract the tree element mode', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+					$mode = substr($object, $d, $s - $d);
+					++$s;
+					$d = $s + strcspn($object, "\0", $s);
+					if($s == $l)
+						return($this->SetError('could not extract the tree element name', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+					$name = substr($object, $s, $d - $s);
+					++$d;
+					$sha1 = substr($object, $d, 20);
+					$d += 20;
+					if($d > $l)
+						return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+					$hash = $this->BinaryToHexadecimal($sha1);
+					$tree[$hash] = array(
+						'mode'=>$mode,
+						'name'=>$name
+					);
+				}
+				$hash = $this->ObjectHash('tree', $object);
+				$this->OutputDebug($hash.' '.print_r($tree, 1));
+				$objects[$hash] = array(
+					'type'=>$type,
+					'data'=>$object
+				);
+				break;
+			case 3:
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				$hash = $this->ObjectHash('blob', $object);
+				$this->OutputDebug($hash.' '.strlen($object).' '.$object);
+				$objects[$hash] = array(
+					'type'=>$type,
+					'data'=>$object
+				);
+				break;
+			case 4:
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				$hash = $this->ObjectHash('tag', $object);
+				$this->OutputDebug($object);
+				$objects[$hash] = array(
+					'type'=>$type,
+					'data'=>$object
+				);
+				break;
+			case 6:
+				if(!$this->UnpackByte($head))
+					return(0);
+				$base_offset = $head & 0x7F;
+				while ($head & 0x80)
+				{
+					++$base_offset;
+					if(!$this->UnpackByte($head))
+						return(0);
+					$base_offset = ($base_offset << 7) + ($head & 0x7F);
+				}
+				$this->OutputDebug('Patch size '.$size.' Object offset '.$base_offset);
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				for($f = 0; $f < strlen($object); ++$f)
+					$this->OutputDebug(sprintf('%04d %02x %s', $f, Ord($object[$f]), $object[$f]));
+				break;
+			case 7:
+				if(!$this->UnpackData(20, $sha1))
+					return(0);
+				if(!$this->UnpackCompressedData($size, $object))
+					return(0);
+				$hash = $this->BinaryToHexadecimal($sha1);
+				$this->OutputDebug(strlen($object).' '.$hash);
+				if(!IsSet($objects[$hash]))
+					$this->OutputDebug('it was not possible to patch the object '.$hash);
+				else
+					$this->OutputDebug('Patching the object '.$hash);
+				break;
+			default:
+				return($this->SetError('objects of type '.$type.' are not yet supported'));
+		}
+		return(1);
+	}
+
 	Function StartUnpack()
 	{
 		$this->pack_position = 0;
 		$this->pack_block = '';
 		UnSet($this->sideband_channel);
 		$this->end_of_blocks = 0;
-/*
-		if(!$this->fake_pack = fopen('upload-pack', 'rb'))
-			return($this->SetError('could not open the fake upload pack'));
-*/
 		return(1);
+	}
+
+	Function BinaryToHexadecimal($b)
+	{
+		$l = strlen($b);
+		for($h = '', $s = 0; $s < $l; ++$s)
+			$h .= sprintf('%02x', Ord($b[$s]));
+		return($h);
 	}
 
 	Function RequestUploadPack($object)
@@ -361,7 +494,7 @@ class git_client_class
 			'Content-Type'=>'application/x-git-upload-pack-request',
 			'Accept'=>'application/x-git-upload-pack-result'
 		);
-		$body = $this->PackLine('want '.$object.' multi_ack_detailed side-band-64k thin-pack no-progress').'0000'.$this->PackLine('done');
+		$body = $this->PackLine('want '.$object.' multi_ack_detailed side-band-64k thin-pack no-progress'/*.' ofs-delta'*/).'0000'.$this->PackLine('done');
 		if(!$this->GetRequest($this->repository.'/git-upload-pack', 'POST', $headers, $body))
 			return(0);
 		if(!$this->StartUnpack())
@@ -377,105 +510,15 @@ class git_client_class
 		if($data !== 'PACK')
 			return($this->SetError('unexpected upload pack response', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		if(!$this->UnpackInteger($version)
-		|| !$this->UnpackInteger($objects))
+		|| !$this->UnpackInteger($pack_objects))
 			return(0);
-		$this->OutputDebug('Version '.$version.' Objects '.$objects);
-		for($o = 0; $o < $objects; ++$o)
+		$this->OutputDebug('Version '.$version.' Pack Objects '.$pack_objects);
+		$objects = array();
+		for($o = 0; $o < $pack_objects; ++$o)
 		{
-			if(!$this->UnpackByte($head))
+			$this->OutputDebug('Object '.$o);
+			if(!$this->UnpackObject($objects))
 				return(0);
-			$shift = 4;
-			$type = ($head & 0x70) >> 4;
-			$size = $head & 0xF;
-			while($head & 0x80)
-			{
-				if(!$this->UnpackByte($head))
-					return(0);
-				$size += ($head & 0x7F) << $shift;
-				$shift += 7;
-			}
-			$this->OutputDebug('Object '.$o.' Type '.$type.' Size '.$size);
-			switch($type)
-			{
-				case 1:
-					if(!$this->UnpackCompressedData($size, $object))
-						return(0);
-					$commit = array();
-					$l = strlen($object);
-					for($d = 0; $d < $l && $object[$d] !== "\n";)
-					{
-						$s = $d + strcspn($object, ' ', $d);
-						$key = substr($object, $d, $s - $d);
-						++$s;
-						$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
-						if($object[$d] === "\n")
-							++$d;
-					}
-					if($object[$d] === "\n")
-						++$d;
-					$commit['Body'] = substr($object, $d);
-					$this->OutputDebug(print_r($commit, 1));
-					break;
-				case 2:
-					if(!$this->UnpackCompressedData($size, $object))
-						return(0);
-					$tree = array();
-					$l = strlen($object);
-					for($d = 0; $d < $l;)
-					{
-						$s = $d + strcspn($object, ' ', $d);
-						if($s == $l)
-							return($this->SetError('could not extract the tree element mode', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-						$mode = substr($object, $d, $s - $d);
-						++$s;
-						$d = $s + strcspn($object, "\0", $s);
-						if($s == $l)
-							return($this->SetError('could not extract the tree element name', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-						$name = substr($object, $s, $d - $s);
-						++$d;
-						$id = substr($object, $d, 20);
-						$d += 20;
-						if($d > $l)
-							return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-						for($hash = '', $s = 0; $s < 20; ++$s)
-							$hash .= sprintf('%02x', Ord($id[$s]));
-						$tree[$hash] = array(
-							'mode'=>$mode,
-							'name'=>$name
-						);
-					}
-					$this->OutputDebug(print_r($tree, 1));
-					break;
-				case 3:
-				case 4:
-					if(!$this->UnpackCompressedData($size, $object))
-						return(0);
-					$this->OutputDebug($object);
-					break;
-				case 6:
-					if(!$this->UnpackByte($head))
-						return(0);
-					$base_offset = $head & 0x7F;
-					while (c & 0x80)
-					{
-						++$base_offset;
-						if(!$this->UnpackByte($head))
-							return(0);
-						$base_offset = ($base_offset << 7) + ($head & 0x7F);
-					}
-					if(!$this->UnpackCompressedData($size, $object))
-						return(0);
-					break;
-				case 7:
-					if(!$this->UnpackData(20, $object))
-						return(0);
-					if(!$this->UnpackCompressedData($size, $object))
-						return(0);
-					break;
-				default:
-					return($this->SetError('objects of type '.$type.' are not yet supported'));
-					
-			}
 		}
 		return($this->SetError('RequestUploadPack not fully implemented'));
 	}
