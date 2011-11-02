@@ -338,12 +338,88 @@ class git_client_class
 		$integer = $u[1];
 		return(1);
 	}
+	
+	Function GetBlockSize($block, &$position, &$size)
+	{
+		$size = $shift = 0;
+		$l = strlen($block);
+		do
+		{
+			if($position >= $l)
+				return($this->SetError('reached premature end of patch delta data', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			$b = Ord($block[$position]);
+			$size += ($b & 0x7F) << $shift;
+			$shift += 7;
+			++$position;
+		}
+		while($b & 0x80);
+		return(1);
+	}
+
+	Function ApplyDelta(&$objects, $base, $delta)
+	{
+		if(!IsSet($objects[$base]))
+			return($this->SetError('it was specified an unknown base object to apply the delta patch', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		$this->OutputDebug('Patching the object '.$base);
+		$position = 0;
+		if(!$this->GetBlockSize($delta, $position, $size))
+			return(0);
+		$data = $objects[$base]['data'];
+		if($size != strlen($data))
+			return($this->SetError('the delta size does not match the object size', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		if(!$this->GetBlockSize($delta, $position, $remaining))
+			return(0);
+		$l = strlen($delta);
+		$patched = '';
+		while($position < $l)
+		{
+			$command = Ord($delta[$position++]);
+			if($command & 0x80)
+			{
+				$offset = ($command & 0x1) ? Ord($delta[$position++]) : 0;
+				if($command & 0x2)
+					$offset += Ord($delta[$position++]) * 0x100;
+				if($command & 0x4)
+					$offset += Ord($delta[$position++]) * 0x10000;
+				if($command & 0x8)
+					$offset += Ord($delta[$position++]) * 0x1000000;
+				$length = ($command & 0x10) ? Ord($delta[$position++]) : 0;
+				if($command & 0x20)
+					$length += Ord($delta[$position++]) * 0x100;
+				if($command & 0x40)
+					$length += Ord($delta[$position++]) * 0x10000;
+				if($length == 0)
+					$length = 0x10000;
+				$patched .= substr($data, $offset, $length);
+				$remaining -= $length;
+			}
+			elseif($command)
+			{
+				if($command > $remaining)
+					break;
+				$patched = substr($delta, $position, $command);
+				$position += $command;
+				$remaining -= $command;
+			}
+			else
+				return($this->SetError('unexpected delta command 0', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		}
+		if($position < $l
+		|| $remaining != 0)
+			return($this->SetError('attempted to apply corrupted delta data', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		$type = $objects[$base]['type'];
+		$hash = $this->ObjectHash($type, $patched);
+		$objects[$hash] = array(
+			'type'=>$type,
+			'data'=>$patched
+		);
+		return(1);
+	}
 
 	Function UnpackObject(&$objects)
 	{
 		if(!$this->UnpackByte($head))
 			return(0);
-		$header = $head;
 		$shift = 4;
 		$type = ($head & 0x70) >> 4;
 		$size = $head & 0xF;
@@ -351,7 +427,6 @@ class git_client_class
 		{
 			if(!$this->UnpackByte($head))
 				return(0);
-			$header .= $head;
 			$size += ($head & 0x7F) << $shift;
 			$shift += 7;
 		}
@@ -450,8 +525,6 @@ class git_client_class
 				$this->OutputDebug('Patch size '.$size.' Object offset '.$base_offset);
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
-				for($f = 0; $f < strlen($object); ++$f)
-					$this->OutputDebug(sprintf('%04d %02x %s', $f, Ord($object[$f]), $object[$f]));
 				break;
 			case 7:
 				if(!$this->UnpackData(20, $sha1))
@@ -460,10 +533,8 @@ class git_client_class
 					return(0);
 				$hash = $this->BinaryToHexadecimal($sha1);
 				$this->OutputDebug(strlen($object).' '.$hash);
-				if(!IsSet($objects[$hash]))
-					$this->OutputDebug('it was not possible to patch the object '.$hash);
-				else
-					$this->OutputDebug('Patching the object '.$hash);
+				if(!$this->ApplyDelta($objects, $hash, $object))
+					return(0);
 				break;
 			default:
 				return($this->SetError('objects of type '.$type.' are not yet supported'));
