@@ -97,6 +97,9 @@ class git_client_class
 	var $pack_position = 0;
 	var $sideband_channel;
 	var $end_of_blocks = 0;
+	var $checkout_objects = array();
+	var $current_checkout_tree = array();
+	var $current_checkout_tree_entry;
 
 	/* Private functions */
 
@@ -355,6 +358,35 @@ class git_client_class
 		while($b & 0x80);
 		return(1);
 	}
+	
+	Function ParseTreeObject($object, &$tree)
+	{
+		$tree = array();
+		$l = strlen($object);
+		for($d = 0; $d < $l;)
+		{
+			$s = $d + strcspn($object, ' ', $d);
+			if($s == $l)
+				return($this->SetError('could not extract the tree element mode', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			$mode = substr($object, $d, $s - $d);
+			++$s;
+			$d = $s + strcspn($object, "\0", $s);
+			if($s == $l)
+				return($this->SetError('could not extract the tree element name', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			$name = substr($object, $s, $d - $s);
+			++$d;
+			$sha1 = substr($object, $d, 20);
+			$d += 20;
+			if($d > $l)
+				return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			$hash = $this->BinaryToHexadecimal($sha1);
+			$tree[$hash] = array(
+				'mode'=>$mode,
+				'name'=>$name
+			);
+		}
+		return(1);
+	}
 
 	Function ApplyDelta(&$objects, $base, $delta)
 	{
@@ -397,7 +429,7 @@ class git_client_class
 			{
 				if($command > $remaining)
 					break;
-				$patched = substr($delta, $position, $command);
+				$patched .= substr($delta, $position, $command);
 				$position += $command;
 				$remaining -= $command;
 			}
@@ -411,8 +443,10 @@ class git_client_class
 		$hash = $this->ObjectHash($type, $patched);
 		$objects[$hash] = array(
 			'type'=>$type,
-			'data'=>$patched
+			'data'=>$patched,
+			'base'=>$base
 		);
+		$objects[$base]['patched'] = $hash;
 		return(1);
 	}
 
@@ -453,42 +487,17 @@ class git_client_class
 				$hash = $this->ObjectHash('commit', $object);
 				$this->OutputDebug($hash.' '.print_r($commit, 1));
 				$objects[$hash] = array(
-					'type'=>$type,
+					'type'=>'commit',
 					'data'=>$object
 				);
 				break;
 			case 2:
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
-				$tree = array();
-				$l = strlen($object);
-				for($d = 0; $d < $l;)
-				{
-					$s = $d + strcspn($object, ' ', $d);
-					if($s == $l)
-						return($this->SetError('could not extract the tree element mode', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-					$mode = substr($object, $d, $s - $d);
-					++$s;
-					$d = $s + strcspn($object, "\0", $s);
-					if($s == $l)
-						return($this->SetError('could not extract the tree element name', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-					$name = substr($object, $s, $d - $s);
-					++$d;
-					$sha1 = substr($object, $d, 20);
-					$d += 20;
-					if($d > $l)
-						return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-					$hash = $this->BinaryToHexadecimal($sha1);
-					$tree[$hash] = array(
-						'mode'=>$mode,
-						'name'=>$name
-					);
-				}
 				$hash = $this->ObjectHash('tree', $object);
-				$this->OutputDebug($hash.' '.print_r($tree, 1));
 				$objects[$hash] = array(
-					'type'=>$type,
-					'data'=>$object
+					'type'=>'tree',
+					'data'=>$object,
 				);
 				break;
 			case 3:
@@ -497,7 +506,7 @@ class git_client_class
 				$hash = $this->ObjectHash('blob', $object);
 				$this->OutputDebug($hash.' '.strlen($object).' '.$object);
 				$objects[$hash] = array(
-					'type'=>$type,
+					'type'=>'blob',
 					'data'=>$object
 				);
 				break;
@@ -507,7 +516,7 @@ class git_client_class
 				$hash = $this->ObjectHash('tag', $object);
 				$this->OutputDebug($object);
 				$objects[$hash] = array(
-					'type'=>$type,
+					'type'=>'tag',
 					'data'=>$object
 				);
 				break;
@@ -559,7 +568,7 @@ class git_client_class
 		return($h);
 	}
 
-	Function RequestUploadPack($object)
+	Function RequestUploadPack($object, &$objects)
 	{
 		$headers = array(
 			'Content-Type'=>'application/x-git-upload-pack-request',
@@ -568,30 +577,44 @@ class git_client_class
 		$body = $this->PackLine('want '.$object.' multi_ack_detailed side-band-64k thin-pack no-progress'/*.' ofs-delta'*/).'0000'.$this->PackLine('done');
 		if(!$this->GetRequest($this->repository.'/git-upload-pack', 'POST', $headers, $body))
 			return(0);
-		if(!$this->StartUnpack())
+		if(!$this->StartUnpack()
+		|| !$this->ReadPackBlock($block, $length))
+		{
+			$this->http->Close();
 			return(0);
-		if(!$this->ReadPackBlock($block, $length))
-			return(0);
+		}
 		if($block !== "NAK\n")
 			return($this->SetError('unexpected upload pack response', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		if(!$this->UnpackByte($this->sideband_channel))
+		if(!$this->UnpackByte($this->sideband_channel)
+		|| !$this->UnpackData(4, $data))
+		{
+			$this->http->Close();
 			return(0);
-		if(!$this->UnpackData(4, $data))
-			return(0);
+		}
 		if($data !== 'PACK')
+		{
+			$this->http->Close();
 			return($this->SetError('unexpected upload pack response', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		}
 		if(!$this->UnpackInteger($version)
 		|| !$this->UnpackInteger($pack_objects))
+		{
+			$this->http->Close();
 			return(0);
+		}
 		$this->OutputDebug('Version '.$version.' Pack Objects '.$pack_objects);
 		$objects = array();
 		for($o = 0; $o < $pack_objects; ++$o)
 		{
 			$this->OutputDebug('Object '.$o);
 			if(!$this->UnpackObject($objects))
+			{
+				$this->http->Close();
 				return(0);
+			}
 		}
-		return($this->SetError('RequestUploadPack not fully implemented'));
+		$this->http->Close();
+		return(1);
 	}
 
 	/* Public functions */
@@ -632,22 +655,65 @@ class git_client_class
 		$module = $arguments['Module'];
 		if($this->debug)
 			$this->OutputDebug('Checkout module '.$module);
-		if(!$this->GetUploadPack($upload_pack))
+		if(!$this->StartUnpack()
+		|| !$this->GetUploadPack($upload_pack))
 			return(0);
 		if(!IsSet($upload_pack['refs/heads/master']['object']))
 			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		if(!$this->RequestUploadPack($upload_pack['refs/heads/master']['object']))
+		if(!$this->RequestUploadPack($upload_pack['refs/heads/master']['object'], $this->checkout_objects))
 		{
 			$this->OutputDebug($this->error);
 			return(0);
 		}
-		return($this->SetError('Checkout not fully implemented'));
+		Reset($this->checkout_objects);
+		$this->current_checkout_tree = array();
 		return(1);
 	}
 
 	Function GetNextFile($arguments, &$file, &$no_more_files)
 	{
-		return($this->SetError('not yet implemented'));
+		$no_more_files = 0;
+		do
+		{
+			while(count($this->current_checkout_tree) == 0)
+			{
+				for(;IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
+				{
+					while($this->checkout_objects[$hash]['type'] == 'tree'
+					&& !IsSet($this->checkout_objects[$hash]['patched']))
+					{
+						if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
+							return(0);
+						$this->current_checkout_tree = $tree;
+						Reset($this->current_checkout_tree);
+						$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+						break 2;
+					}
+				}
+				if(count($this->current_checkout_tree) == 0)
+				{
+					$no_more_files = 1;
+					return(1);
+				}
+			}
+			while(IsSet($this->current_checkout_tree_entry)
+			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
+			{
+				$entry = $this->current_checkout_tree[$hash];
+				$file = array(
+					'Name'=>$entry['name'],
+					'Mode'=>$entry['mode'],
+				);
+				Next($this->current_checkout_tree);
+				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+				return(1);
+			}
+			UnSet($this->current_checkout_tree_entry);
+			Next($this->checkout_objects);
+			$hash = Key($this->checkout_objects);
+		}
+		while(IsSet($this->checkout_objects[$hash]));
+		$no_more_files = 1;
 		return(1);
 	}
 
