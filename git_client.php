@@ -699,6 +699,10 @@ class git_client_class
 			while(IsSet($this->current_checkout_tree_entry)
 			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
 			{
+				if(!IsSet($this->checkout_objects[$hash]))
+					return($this->SetError('it was not returned the file entry object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				if($this->checkout_objects[$hash]['type'] !== 'blob')
+					return($this->SetError('it was not returned a valid type for file object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 				$entry = $this->current_checkout_tree[$hash];
 				$base_name = $entry['name'];
 				if(($path = dirname($base_name)) === '.')
@@ -732,6 +736,8 @@ class git_client_class
 					'File'=>$base_name,
 					'RelativeFile'=>$base_name,
 					'Mode'=>$modes,
+					'Data'=>$this->checkout_objects[$hash]['data'],
+					'Size'=>strlen($this->checkout_objects[$hash]['data'])
 				);
 				Next($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
