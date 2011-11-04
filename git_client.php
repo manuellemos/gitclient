@@ -392,7 +392,6 @@ class git_client_class
 	{
 		if(!IsSet($objects[$base]))
 			return($this->SetError('it was specified an unknown base object to apply the delta patch', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		$this->OutputDebug('Patching the object '.$base);
 		$position = 0;
 		if(!$this->GetBlockSize($delta, $position, $size))
 			return(0);
@@ -464,7 +463,8 @@ class git_client_class
 			$size += ($head & 0x7F) << $shift;
 			$shift += 7;
 		}
-		$this->OutputDebug('Type '.$type.' Size '.$size);
+		if($this->debug)
+			$this->OutputDebug('Type '.$type.' Size '.$size);
 		switch($type)
 		{
 			case 1:
@@ -485,7 +485,8 @@ class git_client_class
 					++$d;
 				$commit['Body'] = substr($object, $d);
 				$hash = $this->ObjectHash('commit', $object);
-				$this->OutputDebug($hash.' '.print_r($commit, 1));
+				if($this->debug)
+					$this->OutputDebug($hash.' '.print_r($commit, 1));
 				$objects[$hash] = array(
 					'type'=>'commit',
 					'data'=>$object
@@ -504,7 +505,8 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				$hash = $this->ObjectHash('blob', $object);
-				$this->OutputDebug($hash.' '.strlen($object).' '.$object);
+				if($this->debug)
+					$this->OutputDebug($hash.' '.strlen($object).' '.$object);
 				$objects[$hash] = array(
 					'type'=>'blob',
 					'data'=>$object
@@ -514,7 +516,8 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				$hash = $this->ObjectHash('tag', $object);
-				$this->OutputDebug($object);
+				if($this->debug)
+					$this->OutputDebug($object);
 				$objects[$hash] = array(
 					'type'=>'tag',
 					'data'=>$object
@@ -531,7 +534,8 @@ class git_client_class
 						return(0);
 					$base_offset = ($base_offset << 7) + ($head & 0x7F);
 				}
-				$this->OutputDebug('Patch size '.$size.' Object offset '.$base_offset);
+				if($this->debug)
+					$this->OutputDebug('Patch size '.$size.' Object offset '.$base_offset);
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				break;
@@ -541,7 +545,8 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				$hash = $this->BinaryToHexadecimal($sha1);
-				$this->OutputDebug(strlen($object).' '.$hash);
+				if($this->debug)
+					$this->OutputDebug('Patch object '.$hash);
 				if(!$this->ApplyDelta($objects, $hash, $object))
 					return(0);
 				break;
@@ -602,11 +607,13 @@ class git_client_class
 			$this->http->Close();
 			return(0);
 		}
-		$this->OutputDebug('Version '.$version.' Pack Objects '.$pack_objects);
+		if($this->debug)
+			$this->OutputDebug('Pack version '.$version.' objects '.$pack_objects);
 		$objects = array();
 		for($o = 0; $o < $pack_objects; ++$o)
 		{
-			$this->OutputDebug('Object '.$o);
+			if($this->debug)
+				$this->OutputDebug('Object '.$o);
 			if(!$this->UnpackObject($objects))
 			{
 				$this->http->Close();
@@ -662,7 +669,8 @@ class git_client_class
 			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		if(!$this->RequestUploadPack($upload_pack['refs/heads/master']['object'], $this->checkout_objects))
 		{
-			$this->OutputDebug($this->error);
+			if($this->debug)
+				$this->OutputDebug($this->error);
 			return(0);
 		}
 		Reset($this->checkout_objects);
@@ -731,6 +739,7 @@ class git_client_class
 					$modes[substr('ugo', $m, 1)] = $mode_map[$mode_value];
 				}
 				$file = array(
+					'Version'=>$hash,
 					'Name'=>basename($base_name),
 					'Path'=>$path,
 					'File'=>$base_name,
