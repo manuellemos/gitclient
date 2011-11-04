@@ -700,9 +700,38 @@ class git_client_class
 			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
 			{
 				$entry = $this->current_checkout_tree[$hash];
+				$base_name = $entry['name'];
+				if(($path = dirname($base_name)) === '.')
+					$path = '';
+				else
+					$path .= '/';
+				$modes = array();
+				$mode = substr($entry['mode'], -3);
+				if(strlen($mode) != 3)
+					return($this->SetError('unexpected file mode value "'.$entry['mode'].'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				$mode_map = array(
+					'0'=>'',
+					'1'=>'x',
+					'2'=>'w',
+					'3'=>'wx',
+					'4'=>'r',
+					'5'=>'rx',
+					'6'=>'rw',
+					'7'=>'rwx'
+				);
+				for($m = 0; $m < 3; ++$m)
+				{
+					$mode_value = $mode[$m];
+					if(!IsSet($mode_map[$mode_value]))
+						return($this->SetError('unexpected file mode value "'.$mode_value.'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+					$modes[substr('ugo', $m, 1)] = $mode_map[$mode_value];
+				}
 				$file = array(
-					'Name'=>$entry['name'],
-					'Mode'=>$entry['mode'],
+					'Name'=>basename($base_name),
+					'Path'=>$path,
+					'File'=>$base_name,
+					'RelativeFile'=>$base_name,
+					'Mode'=>$modes,
 				);
 				Next($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
