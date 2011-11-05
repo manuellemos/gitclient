@@ -321,7 +321,16 @@ class git_client_class
 			return($this->SetError('the uncompressed data size does not match the expected size', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		$recompressed = gzcompress($data);
 		if(strncmp($compressed, $recompressed, strlen($recompressed)))
-			return($this->SetError('it was not possible to determine the length of a compressed data block', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		{
+			for($c = 9; $c >= 0 ; --$c)
+			{
+				$recompressed = gzcompress($data, $c);
+				if(!strncmp($compressed, $recompressed, strlen($recompressed)))
+					break;
+			}
+			if($c < 0)
+				return($this->SetError('it was not possible to determine the length of a compressed data block', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		}
 		$this->pack_position -= strlen($compressed) - strlen($recompressed);
 		return(1);
 	}
@@ -497,6 +506,12 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				$hash = $this->ObjectHash('tree', $object);
+				if($this->debug)
+				{
+					if(!$this->ParseTreeObject($object, $tree))
+						return(0);
+					$this->OutputDebug($hash.' '.print_r($tree, 1));
+				}
 				$objects[$hash] = array(
 					'type'=>'tree',
 					'data'=>$object,
