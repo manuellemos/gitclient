@@ -100,6 +100,7 @@ class git_client_class
 	var $checkout_objects = array();
 	var $current_checkout_tree = array();
 	var $current_checkout_tree_entry;
+	var $pack_objects = array();
 
 	/* Private functions */
 
@@ -667,11 +668,18 @@ class git_client_class
 			return(0);
 		if(!IsSet($upload_pack['refs/heads/master']['object']))
 			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		if(!$this->RequestUploadPack($upload_pack['refs/heads/master']['object'], $this->checkout_objects))
+		$head = $upload_pack['refs/heads/master']['object'];
+		if(IsSet($this->pack_objects[$head]))
+			$this->checkout_objects = $this->pack_objects[$head];
+		else
 		{
-			if($this->debug)
-				$this->OutputDebug($this->error);
-			return(0);
+			if(!$this->RequestUploadPack($head, $this->checkout_objects))
+			{
+				if($this->debug)
+					$this->OutputDebug($this->error);
+				return(0);
+			}
+			$this->pack_objects[$head] = $this->checkout_objects;
 		}
 		Reset($this->checkout_objects);
 		$this->current_checkout_tree = array();
