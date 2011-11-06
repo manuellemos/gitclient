@@ -98,9 +98,12 @@ class git_client_class
 	var $sideband_channel;
 	var $end_of_blocks = 0;
 	var $checkout_objects = array();
+	var $checkout_trees = array();
 	var $current_checkout_tree = array();
+	var $checkout_tree = 0;
 	var $current_checkout_tree_entry;
 	var $pack_objects = array();
+	var $current_checkout_tree_path = '';
 
 	/* Private functions */
 
@@ -397,6 +400,25 @@ class git_client_class
 		}
 		return(1);
 	}
+	
+	Function ParseCommitObject($object, &$commit)
+	{
+		$commit = array();
+		$l = strlen($object);
+		for($d = 0; $d < $l && $object[$d] !== "\n";)
+		{
+			$s = $d + strcspn($object, ' ', $d);
+			$key = substr($object, $d, $s - $d);
+			++$s;
+			$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+			if($object[$d] === "\n")
+				++$d;
+		}
+		if($object[$d] === "\n")
+			++$d;
+		$commit['Body'] = substr($object, $d);
+		return(1);
+	}
 
 	Function ApplyDelta(&$objects, $base, $delta)
 	{
@@ -480,26 +502,10 @@ class git_client_class
 			case 1:
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
-				$commit = array();
-				$l = strlen($object);
-				for($d = 0; $d < $l && $object[$d] !== "\n";)
-				{
-					$s = $d + strcspn($object, ' ', $d);
-					$key = substr($object, $d, $s - $d);
-					++$s;
-					$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
-					if($object[$d] === "\n")
-						++$d;
-				}
-				if($object[$d] === "\n")
-					++$d;
-				$commit['Body'] = substr($object, $d);
 				$hash = $this->ObjectHash('commit', $object);
-				if($this->debug)
-					$this->OutputDebug($hash.' '.print_r($commit, 1));
 				$objects[$hash] = array(
 					'type'=>'commit',
-					'data'=>$object
+					'data'=>$object,
 				);
 				break;
 			case 2:
@@ -510,7 +516,8 @@ class git_client_class
 				{
 					if(!$this->ParseTreeObject($object, $tree))
 						return(0);
-					$this->OutputDebug($hash.' '.print_r($tree, 1));
+					if($this->debug)
+						$this->OutputDebug($hash.' '.print_r($tree, 1));
 				}
 				$objects[$hash] = array(
 					'type'=>'tree',
@@ -696,7 +703,20 @@ class git_client_class
 			}
 			$this->pack_objects[$head] = $this->checkout_objects;
 		}
-		Reset($this->checkout_objects);
+		$this->checkout_trees = array();
+		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
+		{
+			if($this->checkout_objects[$hash]['type'] == 'commit')
+			{
+				if(!$this->ParseCommitObject($this->checkout_objects[$hash]['data'], $commit))
+					return(0);
+				if($this->debug)
+					$this->OutputDebug('Commit '.$hash.' '.print_r($commit, 1));
+				$this->checkout_trees[] = $commit['Headers']['tree'];
+				break;
+			}
+		}
+		$this->checkout_tree = 0;
 		$this->current_checkout_tree = array();
 		return(1);
 	}
@@ -704,37 +724,42 @@ class git_client_class
 	Function GetNextFile($arguments, &$file, &$no_more_files)
 	{
 		$no_more_files = 0;
-		do
+		for(;;)
 		{
 			while(count($this->current_checkout_tree) == 0)
 			{
-				for(;IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
-				{
-					while($this->checkout_objects[$hash]['type'] == 'tree'
-					&& !IsSet($this->checkout_objects[$hash]['patched']))
-					{
-						if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
-							return(0);
-						$this->current_checkout_tree = $tree;
-						Reset($this->current_checkout_tree);
-						$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
-						break 2;
-					}
-				}
-				if(count($this->current_checkout_tree) == 0)
+				if($this->checkout_tree >= count($this->checkout_trees))
 				{
 					$no_more_files = 1;
 					return(1);
 				}
+				$hash = $this->checkout_trees[$this->checkout_tree++];
+				if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
+					return(0);
+				$this->current_checkout_tree = $tree;
+				$this->current_checkout_tree_path = (IsSet($this->checkout_objects[$hash]['path']) ? $this->checkout_objects[$hash]['path'] : '');
+				Reset($this->current_checkout_tree);
+				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+				if($this->debug)
+					$this->OutputDebug('Tree '.$hash.' '.$this->current_checkout_tree_path);
 			}
 			while(IsSet($this->current_checkout_tree_entry)
 			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
 			{
 				if(!IsSet($this->checkout_objects[$hash]))
 					return($this->SetError('it was not returned the file entry object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-				if($this->checkout_objects[$hash]['type'] !== 'blob')
-					return($this->SetError('it was not returned a valid type for file object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				$type = $this->checkout_objects[$hash]['type'];
 				$entry = $this->current_checkout_tree[$hash];
+				if($type === 'tree')
+				{
+					$this->checkout_objects[$hash]['path'] = $this->current_checkout_tree_path.$entry['name'].'/';
+					Next($this->current_checkout_tree);
+					$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+					$this->checkout_trees[] = $hash;
+					continue;
+				}
+				if($type !== 'blob')
+					return($this->SetError('it was returned an object of type '.$type.' for the file object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 				$base_name = $entry['name'];
 				if(($path = dirname($base_name)) === '.')
 					$path = '';
@@ -765,8 +790,8 @@ class git_client_class
 					'Version'=>$hash,
 					'Name'=>basename($base_name),
 					'Path'=>$path,
-					'File'=>$base_name,
-					'RelativeFile'=>$base_name,
+					'File'=>$this->current_checkout_tree_path.$base_name,
+					'RelativeFile'=>$this->current_checkout_tree_path.$base_name,
 					'Mode'=>$modes,
 					'Data'=>$this->checkout_objects[$hash]['data'],
 					'Size'=>strlen($this->checkout_objects[$hash]['data'])
@@ -776,10 +801,8 @@ class git_client_class
 				return(1);
 			}
 			UnSet($this->current_checkout_tree_entry);
-			Next($this->checkout_objects);
-			$hash = Key($this->checkout_objects);
+			$this->current_checkout_tree = array();
 		}
-		while(IsSet($this->checkout_objects[$hash]));
 		$no_more_files = 1;
 		return(1);
 	}
