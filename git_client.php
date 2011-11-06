@@ -104,6 +104,11 @@ class git_client_class
 	var $current_checkout_tree_entry;
 	var $pack_objects = array();
 	var $current_checkout_tree_path = '';
+	var $log_files = array();
+	var $log_commit = '';
+	var $current_log_file = 0;
+	var $commits = array();
+	var $trees = array();
 
 	/* Private functions */
 
@@ -585,6 +590,8 @@ class git_client_class
 		$this->pack_block = '';
 		UnSet($this->sideband_channel);
 		$this->end_of_blocks = 0;
+		$this->commits = array();
+		$this->trees = array();
 		return(1);
 	}
 
@@ -647,6 +654,62 @@ class git_client_class
 		return(1);
 	}
 
+	Function GetPack()
+	{
+		if(!$this->StartUnpack()
+		|| !$this->GetUploadPack($upload_pack))
+			return(0);
+		if(!IsSet($upload_pack['refs/heads/master']['object']))
+			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		$head = $upload_pack['refs/heads/master']['object'];
+		if(IsSet($this->pack_objects[$head]))
+			$this->checkout_objects = $this->pack_objects[$head];
+		else
+		{
+			if(!$this->RequestUploadPack($head, $this->checkout_objects))
+			{
+				if($this->debug)
+					$this->OutputDebug($this->error);
+				return(0);
+			}
+			$this->pack_objects[$head] = $this->checkout_objects;
+		}
+		return(1);
+	}
+
+	Function GetCommitObject($hash, &$commit)
+	{
+		if(IsSet($this->commits[$hash]))
+			$commit = $this->commits[$hash];
+		else
+		{
+			if($this->checkout_objects[$hash]['type'] !== 'commit')
+				return($this->SetError('the object '.$hash.' is not of type commit'));
+			if(!$this->ParseCommitObject($this->checkout_objects[$hash]['data'], $commit))
+				return(0);
+			if(!IsSet($commit['Headers']['tree'])
+			|| !IsSet($this->checkout_objects[$commit['Headers']['tree']]))
+				return($this->SetError('the upload pack did not return a valid commit object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			$this->commits[$hash] = $commit;
+		}
+		return(1);
+	}
+
+	Function GetTreeObject($hash, &$tree)
+	{
+		if(IsSet($this->trees[$hash]))
+			$tree = $this->trees[$hash];
+		else
+		{
+			if($this->checkout_objects[$hash]['type'] !== 'tree')
+				return($this->SetError('the object '.$hash.' is not of type tree'));
+			if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
+				return(0);
+			$this->trees[$hash] = $tree;
+		}
+		return(1);
+	}
+
 	/* Public functions */
 
 	Function Connect($arguments)
@@ -683,32 +746,18 @@ class git_client_class
 		if(!IsSet($arguments['Module']))
 			return($this->SetError('it was not specified a valid module to checkout'));
 		$module = $arguments['Module'];
+		if(strlen($module) != 0)
+			return($this->SetError('checking out a specific module is not yet supported'));
 		if($this->debug)
 			$this->OutputDebug('Checkout module '.$module);
-		if(!$this->StartUnpack()
-		|| !$this->GetUploadPack($upload_pack))
+		if(!$this->GetPack())
 			return(0);
-		if(!IsSet($upload_pack['refs/heads/master']['object']))
-			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		$head = $upload_pack['refs/heads/master']['object'];
-		if(IsSet($this->pack_objects[$head]))
-			$this->checkout_objects = $this->pack_objects[$head];
-		else
-		{
-			if(!$this->RequestUploadPack($head, $this->checkout_objects))
-			{
-				if($this->debug)
-					$this->OutputDebug($this->error);
-				return(0);
-			}
-			$this->pack_objects[$head] = $this->checkout_objects;
-		}
 		$this->checkout_trees = array();
 		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
 		{
 			if($this->checkout_objects[$hash]['type'] == 'commit')
 			{
-				if(!$this->ParseCommitObject($this->checkout_objects[$hash]['data'], $commit))
+				if(!$this->GetCommitObject($hash, $commit))
 					return(0);
 				if($this->debug)
 					$this->OutputDebug('Commit '.$hash.' '.print_r($commit, 1));
@@ -734,7 +783,7 @@ class git_client_class
 					return(1);
 				}
 				$hash = $this->checkout_trees[$this->checkout_tree++];
-				if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
+				if(!$this->GetTreeObject($hash, $tree))
 					return(0);
 				$this->current_checkout_tree = $tree;
 				$this->current_checkout_tree_path = (IsSet($this->checkout_objects[$hash]['path']) ? $this->checkout_objects[$hash]['path'] : '');
@@ -817,6 +866,8 @@ class git_client_class
 		if(IsSet($arguments['Module']))
 		{
 			$module = $arguments['Module'];
+			if(strlen($module) != 0)
+				return($this->SetError('checking out a specific module is not yet supported'));
 		}
 		else
 			return($this->SetError('it was not specified a valid directory to get the log'));
@@ -828,21 +879,73 @@ class git_client_class
 			if(strlen($arguments['Revision']) == 0)
 				return($this->SetError('it was not specified a valid log revision'));
 			$start_revision = $end_revision = $arguments['Revision'];
+			return($this->SetError('checking out a specific revision is not yet supported'));
 		}
 		elseif(IsSet($arguments['NewerThan']))
 		{
 			if(GetType($time = strtotime($arguments['NewerThan'])) != 'integer')
 				return($this->SetError('it was not specified a valid newer than time'));
 			$newer_date = gmstrftime('%Y-%m-%dT%H:%M:%S.000000Z', $time);
-			$date_range = 1;
+			return($this->SetError('checking out a specific versions newer than a given date is not yet supported'));
 		}
-		return($this->SetError('not yet implemented'));
+		if(!$this->GetPack())
+			return(0);
+		$commit = array();
+		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
+		{
+			if($this->checkout_objects[$hash]['type'] == 'commit')
+			{
+				if(!$this->GetCommitObject($hash, $commit))
+					return(1);
+				$this->log_commit = $hash;
+				if($this->debug)
+					$this->OutputDebug('Commit '.$hash.' '.print_r($commit, 1));
+				break;
+			}
+		}
+		if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
+			return(0);
+		$this->log_files = array();
+		foreach($tree as $hash => $object)
+		{
+			if($object['name'] === $file)
+			{
+				$this->log_files[] = $hash;
+				break;
+			}
+		}
+		if(count($this->log_files) == 0)
+			return($this->SetError($file.' is not a valid file to get the log'));
+		$this->current_log_file = 0;
 		return(1);
 	}
 
 	Function GetNextLogFile($arguments, &$file, &$no_more_files)
 	{
-		return($this->SetError('not yet implemented'));
+		if($no_more_files = ($this->current_log_file >= count($this->log_files)))
+			return(1);
+		if(!$this->GetCommitObject($this->log_commit, $commit))
+			return(1);
+		if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
+			return(0);
+		$hash = $this->log_files[$this->current_log_file];
+		$file_name = $tree[$hash]['name'];
+		$revisions = array();
+		if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
+			return($this->SetError('it was not possible to extract the committer information', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		$revisions[$hash] = array(
+			'Log'=>$commit['Body'],
+			'author'=>$m[1],
+			'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
+		);
+		$file = array(
+			'Properties'=>array(
+				'description'=>'',
+				'Work file'=>$file_name
+			),
+			'Revisions'=>$revisions
+		);
+		++$this->current_log_file;
 		return(1);
 	}
 
@@ -871,7 +974,11 @@ class git_client_class
 		}
 		if(strlen($this->error)
 		&& ($error_code = $this->error_code) != GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
+		{
+			if($this->debug)
+				$this->OutputDebug('Validate error: '.$this->error);
 			$this->error = '';
+		}
 		if(!$this->Disconnect())
 			return(0);
 		return(1);
