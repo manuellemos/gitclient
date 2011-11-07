@@ -924,20 +924,53 @@ class git_client_class
 	{
 		if($no_more_files = ($this->current_log_file >= count($this->log_files)))
 			return(1);
-		if(!$this->GetCommitObject($this->log_commit, $commit))
-			return(1);
-		if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
-			return(0);
 		$hash = $this->log_files[$this->current_log_file];
-		$file_name = $tree[$hash]['name'];
+		$next_commit = $this->log_commit;
+		$first = 1;
 		$revisions = array();
-		if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
-			return($this->SetError('it was not possible to extract the committer information', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		$revisions[$hash] = array(
-			'Log'=>$commit['Body'],
-			'author'=>$m[1],
-			'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
-		);
+		for(;;)
+		{
+			if(!$this->GetCommitObject($next_commit, $commit))
+				return(1);
+			if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
+				return(0);
+			if($first)
+			{
+				$file_name = $tree[$hash]['name'];
+				$first = 0;
+				$found = 1;
+			}
+			else
+			{
+				$found = 0;
+				if(!IsSet($tree[$hash]))
+				{
+					foreach($tree as $hash => $object)
+					{
+						if($object['name'] === $file_name)
+						{
+							$found = 1;
+							break;
+						}
+					}
+					if(!$found)
+						break;
+				}
+			}
+			if($found)
+			{
+				if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
+					return($this->SetError('it was not possible to extract the committer information', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				$revisions[$hash] = array(
+					'Log'=>$commit['Body'],
+					'author'=>$m[1],
+					'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
+				);
+			}
+			if(!IsSet($commit['Headers']['parent']))
+				break;
+			$next_commit = $commit['Headers']['parent'];
+		}
 		$file = array(
 			'Properties'=>array(
 				'description'=>'',
