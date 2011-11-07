@@ -109,6 +109,8 @@ class git_client_class
 	var $current_log_file = 0;
 	var $commits = array();
 	var $trees = array();
+	var $log_revision = '';
+	var $log_newer_date = 0;
 
 	/* Private functions */
 
@@ -874,6 +876,7 @@ class git_client_class
 		if($this->debug)
 			$this->OutputDebug('Log '.$file);
 		$this->log_revision = '';
+		$this->log_newer_date = 0;
 		if(IsSet($arguments['Revision']))
 		{
 			if(strlen($this->log_revision = $arguments['Revision']) != 40
@@ -882,10 +885,8 @@ class git_client_class
 		}
 		elseif(IsSet($arguments['NewerThan']))
 		{
-			if(GetType($time = strtotime($arguments['NewerThan'])) != 'integer')
+			if(GetType($this->log_newer_date = strtotime($arguments['NewerThan'])) != 'integer')
 				return($this->SetError('it was not specified a valid newer than time'));
-			$newer_date = gmstrftime('%Y-%m-%dT%H:%M:%S.000000Z', $time);
-			return($this->SetError('checking out a specific versions newer than a given date is not yet supported'));
 		}
 		if(!$this->GetPack())
 			return(0);
@@ -964,13 +965,19 @@ class git_client_class
 			{
 				if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
 					return($this->SetError('it was not possible to extract the committer information', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-				$revisions[$hash] = array(
-					'Log'=>$commit['Body'],
-					'author'=>$m[1],
-					'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
-				);
-				if(strlen($this->log_revision))
-					break;
+				if($this->log_newer_date
+				&& $this->log_newer_date >= intval($m[2]))
+					$found = 0;
+				if($found)
+				{
+					$revisions[$hash] = array(
+						'Log'=>$commit['Body'],
+						'author'=>$m[1],
+						'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
+					);
+					if(strlen($this->log_revision))
+						break;
+				}
 			}
 			if(!IsSet($commit['Headers']['parent']))
 				break;
