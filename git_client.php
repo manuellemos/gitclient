@@ -873,13 +873,12 @@ class git_client_class
 			return($this->SetError('it was not specified a valid directory to get the log'));
 		if($this->debug)
 			$this->OutputDebug('Log '.$file);
-		$date_range = 0;
+		$this->log_revision = '';
 		if(IsSet($arguments['Revision']))
 		{
-			if(strlen($arguments['Revision']) == 0)
+			if(strlen($this->log_revision = $arguments['Revision']) != 40
+			|| strspn($this->log_revision, $this->hexdec) != 40)
 				return($this->SetError('it was not specified a valid log revision'));
-			$start_revision = $end_revision = $arguments['Revision'];
-			return($this->SetError('checking out a specific revision is not yet supported'));
 		}
 		elseif(IsSet($arguments['NewerThan']))
 		{
@@ -957,6 +956,10 @@ class git_client_class
 						break;
 				}
 			}
+			if($found
+			&& strlen($this->log_revision)
+			&& $this->log_revision !== $hash)
+				$found = 0;
 			if($found)
 			{
 				if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
@@ -966,6 +969,8 @@ class git_client_class
 					'author'=>$m[1],
 					'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
 				);
+				if(strlen($this->log_revision))
+					break;
 			}
 			if(!IsSet($commit['Headers']['parent']))
 				break;
