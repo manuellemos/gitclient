@@ -111,6 +111,7 @@ class git_client_class
 	var $trees = array();
 	var $log_revision = '';
 	var $log_newer_date = 0;
+	var $upload_packs = array();
 
 	/* Private functions */
 
@@ -658,9 +659,16 @@ class git_client_class
 
 	Function GetPack()
 	{
-		if(!$this->StartUnpack()
-		|| !$this->GetUploadPack($upload_pack))
-			return(0);
+		if(IsSet($this->upload_packs[$this->repository]))
+			$upload_pack = $this->upload_packs[$this->repository];
+		else
+		{
+			if(!$this->StartUnpack()
+			|| !$this->GetUploadPack($upload_pack))
+				return(0);
+			$this->upload_packs[$this->repository] = $upload_pack;
+			$this->pack_objects = array();
+		}
 		if(!IsSet($upload_pack['refs/heads/master']['object']))
 			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		$head = $upload_pack['refs/heads/master']['object'];
