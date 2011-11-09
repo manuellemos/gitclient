@@ -965,6 +965,7 @@ class git_client_class
 		$next_commit = $this->log_commit;
 		$first = 1;
 		$revisions = array();
+		$got_revision = 0;
 		for(;;)
 		{
 			if(!$this->GetCommitObject($next_commit, $commit))
@@ -1012,9 +1013,19 @@ class git_client_class
 				}
 			}
 			if($found
-			&& strlen($this->log_revision)
-			&& $this->log_revision !== $hash)
-				$found = 0;
+			&& strlen($this->log_revision))
+			{
+				if($got_revision)
+				{
+					if($this->log_revision !== $hash)
+						break;
+				}
+				else
+				{
+					if($this->log_revision !== $hash)
+						$found = 0;
+				}
+			}
 			if($found)
 			{
 				if(!preg_match('/(.*) ([0-9]+) (.*)/', $commit['Headers']['committer'], $m))
@@ -1029,8 +1040,6 @@ class git_client_class
 						'author'=>$m[1],
 						'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
 					);
-					if(strlen($this->log_revision))
-						break;
 				}
 			}
 			if(!IsSet($commit['Headers']['parent']))
