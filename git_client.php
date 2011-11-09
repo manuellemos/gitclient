@@ -1034,15 +1034,15 @@ class git_client_class
 					return($this->SetError('it was not possible to extract the committer information', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 				if($this->log_newer_date
 				&& $this->log_newer_date >= intval($m[2]))
-					$found = 0;
-				if($found)
 				{
-					$revisions[$hash] = array(
-						'Log'=>$commit['Body'],
-						'author'=>$m[1],
-						'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
-					);
+					UnSet($revisions[$hash]);
+					break;
 				}
+				$revisions[$hash] = array(
+					'Log'=>$commit['Body'],
+					'author'=>$m[1],
+					'date'=>gmstrftime('%Y-%m-%d %H:%M:%S +0000', $m[2])
+				);
 			}
 			if(!IsSet($commit['Headers']['parent']))
 				break;
