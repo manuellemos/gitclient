@@ -911,19 +911,45 @@ class git_client_class
 				break;
 			}
 		}
-		if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
-			return(0);
 		$this->log_files = array();
-		foreach($tree as $hash => $object)
+		$tree_object = $commit['Headers']['tree'];
+		$file_path = explode('/', $file);
+		$sub_path = '';
+		foreach($file_path as $path)
 		{
-			if($object['name'] === $file)
+			if(!$this->GetTreeObject($tree_object, $tree))
+				return(0);
+			$found = 0;
+			$sub_path .= $path;
+			foreach($tree as $hash => $object)
 			{
-				$this->log_files[] = $hash;
-				break;
+				if($object['name'] === $path)
+				{
+					$found = 1;
+					break;
+				}
+			}
+			if(!$found)
+				return($this->SetError($sub_path.' is not a valid file path to get the log'));
+			switch($this->checkout_objects[$hash]['type'])
+			{
+				case 'tree':
+					$sub_path .= '/';
+					$tree_object = $hash;
+					break;
+				case 'blob':
+					break 2;
+				default:
+					return($this->SetError($sub_path.' is not a valid file path type object to get the log'));
 			}
 		}
-		if(count($this->log_files) == 0)
+		if($sub_path !== $file)
 			return($this->SetError($file.' is not a valid file to get the log'));
+		$this->log_files[] = array(
+			'object'=>$hash,
+			'path'=>$file_path,
+			'name'=>$file
+		);
 		$this->current_log_file = 0;
 		return(1);
 	}
@@ -932,7 +958,10 @@ class git_client_class
 	{
 		if($no_more_files = ($this->current_log_file >= count($this->log_files)))
 			return(1);
-		$hash = $this->log_files[$this->current_log_file];
+		$log_file = $this->log_files[$this->current_log_file];
+		$hash = $log_file['object'];
+		$file = $log_file['name'];
+		$file_path = $log_file['path'];
 		$next_commit = $this->log_commit;
 		$first = 1;
 		$revisions = array();
@@ -940,29 +969,46 @@ class git_client_class
 		{
 			if(!$this->GetCommitObject($next_commit, $commit))
 				return(1);
-			if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
-				return(0);
 			if($first)
 			{
-				$file_name = $tree[$hash]['name'];
+				$file_name = $file;
 				$first = 0;
 				$found = 1;
 			}
 			else
 			{
 				$found = 0;
-				if(!IsSet($tree[$hash]))
+				$sub_path = '';
+				if(!$this->GetTreeObject($commit['Headers']['tree'], $tree))
+					return(0);
+				foreach($file_path as $path)
 				{
-					foreach($tree as $hash => $object)
+					$sub_path .= $path;
+					foreach($tree as $tree_hash => $object)
 					{
-						if($object['name'] === $file_name)
+						if($object['name'] === $path)
 						{
 							$found = 1;
 							break;
 						}
 					}
 					if(!$found)
-						break;
+						break 2;
+					switch($this->checkout_objects[$tree_hash]['type'])
+					{
+						case 'tree':
+							$sub_path .= '/';
+							$found = 0;
+							if(!$this->GetTreeObject($tree_hash, $tree))
+								return(0);
+							break;
+						case 'blob':
+							if($file !== $sub_path)
+								$found = 0;
+							else
+								$hash = $tree_hash;
+							break 2;
+					}
 				}
 			}
 			if($found
