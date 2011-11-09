@@ -1024,6 +1024,8 @@ class git_client_class
 				{
 					if($this->log_revision !== $hash)
 						$found = 0;
+					else
+						$got_revision = 1;
 				}
 			}
 			if($found)
