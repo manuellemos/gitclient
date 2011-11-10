@@ -272,6 +272,8 @@ class git_client_class
 		{
 			if(!$this->ReadPack($remaining, $data))
 				return(0);
+			if(strlen($data) == 0)
+				return($this->SetError('reached premature end of upload pack block data', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 			$block .= $data;
 			$remaining -= strlen($data);
 		}
