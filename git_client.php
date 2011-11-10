@@ -757,7 +757,7 @@ class git_client_class
 			return($this->SetError('it was not specified a valid module to checkout'));
 		$module = $arguments['Module'];
 		if(strlen($module) != 0)
-			return($this->SetError('checking out a specific module is not yet supported'));
+			return($this->SetError('checking out a specific module is not yet supported', GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
 		if($this->debug)
 			$this->OutputDebug('Checkout module '.$module);
 		if(!$this->GetPack())
