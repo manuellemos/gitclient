@@ -112,6 +112,7 @@ class git_client_class
 	var $log_revision = '';
 	var $log_newer_date = 0;
 	var $upload_packs = array();
+	var $checkout_path = '';
 
 	/* Private functions */
 
@@ -758,13 +759,12 @@ class git_client_class
 		if(!IsSet($arguments['Module']))
 			return($this->SetError('it was not specified a valid module to checkout'));
 		$module = $arguments['Module'];
-		if(strlen($module) != 0)
-			return($this->SetError('checking out a specific module is not yet supported', GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
 		if($this->debug)
 			$this->OutputDebug('Checkout module '.$module);
 		if(!$this->GetPack())
 			return(0);
 		$this->checkout_trees = array();
+		$tree = '';
 		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
 		{
 			if($this->checkout_objects[$hash]['type'] == 'commit')
@@ -773,10 +773,31 @@ class git_client_class
 					return(0);
 				if($this->debug)
 					$this->OutputDebug('Commit '.$hash.' '.print_r($commit, 1));
-				$this->checkout_trees[] = $commit['Headers']['tree'];
+				$hash = $commit['Headers']['tree'];
 				break;
 			}
 		}
+		$module_path = explode('/', $module);
+		for($path = 0;;)
+		{
+			if(!IsSet($this->checkout_objects[$hash])
+			|| $this->checkout_objects[$hash]['type'] !== 'tree')
+				return($this->SetError('it was not returned valid directory tree entry '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			if(count($module_path) === $path)
+				break;
+			if(!$this->GetTreeObject($hash, $tree))
+				return false;
+			foreach($tree as $hash => $entry)
+			{
+				if($entry['name'] === $module_path[$path])
+					break;
+			}
+			if($entry['name'] !== $module_path[$path])
+				return($this->SetError('it was not found the directory tree path '.$module_path[$path], GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			++$path;
+		}
+		$this->checkout_path = (count($module_path) ? implode($module_path, '/').'/' : '');
+		$this->checkout_trees[] = $hash;
 		$this->checkout_tree = 0;
 		$this->current_checkout_tree = array();
 		return(1);
@@ -850,9 +871,9 @@ class git_client_class
 				$file = array(
 					'Version'=>$hash,
 					'Name'=>basename($base_name),
-					'Path'=>$path,
-					'File'=>$this->current_checkout_tree_path.$base_name,
-					'RelativeFile'=>$this->current_checkout_tree_path.$base_name,
+					'PathName'=>$this->checkout_path.$path,
+					'File'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
+					'RelativeFile'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
 					'Mode'=>$modes,
 					'Data'=>$this->checkout_objects[$hash]['data'],
 					'Size'=>strlen($this->checkout_objects[$hash]['data'])
@@ -876,11 +897,7 @@ class git_client_class
 			return($this->SetError('retrieving the log of directories is not yet supported'));
 		$file = $arguments['File'];
 		if(IsSet($arguments['Module']))
-		{
 			$module = $arguments['Module'];
-			if(strlen($module) != 0)
-				return($this->SetError('checking out a specific module is not yet supported'));
-		}
 		else
 			return($this->SetError('it was not specified a valid directory to get the log'));
 		if($this->debug)
@@ -914,8 +931,10 @@ class git_client_class
 			}
 		}
 		$this->log_files = array();
+		if($module[strlen($module) - 1] !== '/')
+			$module.='/';
 		$tree_object = $commit['Headers']['tree'];
-		$file_path = explode('/', $file);
+		$file_path = explode('/', $module.$file);
 		$sub_path = '';
 		foreach($file_path as $path)
 		{
@@ -945,7 +964,7 @@ class git_client_class
 					return($this->SetError($sub_path.' is not a valid file path type object to get the log'));
 			}
 		}
-		if($sub_path !== $file)
+		if($sub_path !== $module.$file)
 			return($this->SetError($file.' is not a valid file to get the log'));
 		$this->log_files[] = array(
 			'object'=>$hash,
@@ -1053,7 +1072,7 @@ class git_client_class
 		$file = array(
 			'Properties'=>array(
 				'description'=>'',
-				'Work file'=>$file_name
+				'Work file'=>basename($file_name)
 			),
 			'Revisions'=>$revisions
 		);
