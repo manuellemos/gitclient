@@ -764,7 +764,7 @@ class git_client_class
 		if(!$this->GetPack())
 			return(0);
 		$this->checkout_trees = array();
-		$tree = '';
+		$hash = '';
 		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
 		{
 			if($this->checkout_objects[$hash]['type'] == 'commit')
@@ -777,7 +777,9 @@ class git_client_class
 				break;
 			}
 		}
-		$module_path = explode('/', $module);
+		if(strlen($hash) == 0)
+			return($this->SetError('it was not returned the repository commit object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+		$module_path = (strlen($module) ? explode('/', $module) : array());
 		for($path = 0;;)
 		{
 			if(!IsSet($this->checkout_objects[$hash])
@@ -918,6 +920,7 @@ class git_client_class
 		if(!$this->GetPack())
 			return(0);
 		$commit = array();
+		$this->log_commit = '';
 		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
 		{
 			if($this->checkout_objects[$hash]['type'] == 'commit')
@@ -930,8 +933,11 @@ class git_client_class
 				break;
 			}
 		}
+		if(strlen($this->log_commit) == 0)
+			return($this->SetError('it was not returned the repository commit object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		$this->log_files = array();
-		if($module[strlen($module) - 1] !== '/')
+		if(strlen($module)
+		&& $module[strlen($module) - 1] !== '/')
 			$module.='/';
 		$tree_object = $commit['Headers']['tree'];
 		$file_path = explode('/', $module.$file);
