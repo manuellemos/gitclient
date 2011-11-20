@@ -1118,6 +1118,7 @@ class git_client_class
 		{
 			if($this->debug)
 				$this->OutputDebug('Validate error: '.$this->error);
+			$this->validation_error = $this->error;
 			$this->error = '';
 		}
 		if(!$this->Disconnect())
