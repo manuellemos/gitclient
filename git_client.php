@@ -88,6 +88,8 @@ class git_client_class
 	
 	var $data_timeout = 60;
 
+	var $validation_error = '';
+
 
 	/* Private variables */
 	var $http;
@@ -1088,10 +1090,12 @@ class git_client_class
 
 	Function Validate($arguments, &$error_code)
 	{
+		$this->validation_error = '';
 		if(!$this->Connect($arguments))
 		{
 			if(($error_code = $this->error_code) != GIT_REPOSITORY_ERROR_NO_ERROR)
 			{
+				$this->validation_error = $this->error;
 				$this->error = '';
 				return(1);
 			}
