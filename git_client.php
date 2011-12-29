@@ -76,8 +76,6 @@ class git_client_class
 
 	var $error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
 
-	var $svn_error_code = 0;
-
 	var $debug = 0;
 
 	var $html_debug = 1;
@@ -740,6 +738,8 @@ class git_client_class
 		$this->http->log_debug = $this->log_debug;
 		$this->http->timeout = $this->timeout;
 		$this->http->data_timeout = $this->data_timeout;
+		$this->error = '';
+		$this->error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
 		return(1);
 	}
 
@@ -1113,8 +1113,9 @@ class git_client_class
 				$this->GetNextFile($checkout_arguments, $file, $no_more_files);
 			}
 		}
+		$error_code = $this->error_code;
 		if(strlen($this->error)
-		&& ($error_code = $this->error_code) != GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
+		&& $error_code != GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
 		{
 			if($this->debug)
 				$this->OutputDebug('Validate error: '.$this->error);
