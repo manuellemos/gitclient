@@ -164,8 +164,9 @@ class git_client_class
 	{
 		$this->http->GetRequestArguments($url, $parameters);
 		$parameters['RequestMethod'] = $method;
-		if(count($headers))
-			$parameters['Headers'] = $headers;
+		if(!IsSet($headers['Accept']))
+			$headers['Accept'] = '*/*';
+		$parameters['Headers'] = $headers;
 		if(strlen($body))
 			$parameters['Body'] = $body;
 		$this->http->Open($parameters);
@@ -738,6 +739,7 @@ class git_client_class
 		$this->http->log_debug = $this->log_debug;
 		$this->http->timeout = $this->timeout;
 		$this->http->data_timeout = $this->data_timeout;
+		$this->http->user_agent = 'git/emulation';
 		$this->error = '';
 		$this->error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
 		return(1);
