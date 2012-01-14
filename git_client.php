@@ -838,7 +838,14 @@ class git_client_class
 			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
 			{
 				if(!IsSet($this->checkout_objects[$hash]))
+				{
+					Next($this->current_checkout_tree);
+					$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+					continue;
+/*
 					return($this->SetError('it was not returned the file entry object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+*/
+				}
 				$type = $this->checkout_objects[$hash]['type'];
 				$entry = $this->current_checkout_tree[$hash];
 				if($type === 'tree')
@@ -963,7 +970,8 @@ class git_client_class
 					break;
 				}
 			}
-			if(!$found)
+			if(!$found
+			|| !IsSet($this->checkout_objects[$hash]))
 				return($this->SetError($sub_path.' is not a valid file path to get the log'));
 			switch($this->checkout_objects[$hash]['type'])
 			{
