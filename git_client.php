@@ -672,9 +672,12 @@ class git_client_class
 			$this->upload_packs[$this->repository] = $upload_pack;
 			$this->pack_objects = array();
 		}
-		if(!IsSet($upload_pack['refs/heads/master']['object']))
+		if(IsSet($upload_pack['HEAD']['object']))
+			$head = $upload_pack['HEAD']['object'];
+		elseif(IsSet($upload_pack['refs/heads/master']['object']))
+			$head = $upload_pack['refs/heads/master']['object'];
+		else
 			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-		$head = $upload_pack['refs/heads/master']['object'];
 		if(IsSet($this->pack_objects[$head]))
 			$this->checkout_objects = $this->pack_objects[$head];
 		else
