@@ -810,7 +810,7 @@ class git_client_class
 			++$path;
 		}
 		$this->checkout_path = (count($module_path) ? implode($module_path, '/').'/' : '');
-		$this->checkout_trees[] = $hash;
+		$this->checkout_trees[] = array('hash'=>$hash, 'path'=>'');
 		$this->checkout_tree = 0;
 		$this->current_checkout_tree = array();
 		return(1);
@@ -830,11 +830,12 @@ class git_client_class
 					$no_more_files = 1;
 					return(1);
 				}
-				$hash = $this->checkout_trees[$this->checkout_tree++];
+				$checkout_tree = $this->checkout_trees[$this->checkout_tree++];
+				$hash = $checkout_tree['hash'];
 				if(!$this->GetTreeObject($hash, $tree))
 					return(0);
 				$this->current_checkout_tree = $tree;
-				$this->current_checkout_tree_path = (IsSet($this->checkout_objects[$hash]['path']) ? $this->checkout_objects[$hash]['path'] : '');
+				$this->current_checkout_tree_path = $checkout_tree['path'];
 				Reset($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
 				if($this->debug)
@@ -857,14 +858,15 @@ class git_client_class
 				}
 				$type = $this->checkout_objects[$hash]['type'];
 				$entry = $this->current_checkout_tree[$name];
+				$hash = $entry['hash'];
 				if($type === 'tree')
 				{
-					$this->checkout_objects[$hash]['path'] = $this->current_checkout_tree_path.$name.'/';
+					$path = $this->current_checkout_tree_path.$name.'/';
+					$this->checkout_trees[] = array('hash'=>$hash, 'path'=>$path);
 					Next($this->current_checkout_tree);
 					$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
-					$this->checkout_trees[] = $hash;
 					if($this->debug)
-						$this->OutputDebug('Found sub-tree with path "'.$this->checkout_objects[$hash]['path'].'"');
+						$this->OutputDebug('Found sub-tree with path "'.$path.'"');
 					continue;
 				}
 				if($type !== 'blob')
