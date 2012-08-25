@@ -78,6 +78,8 @@ class git_client_class
 
 	var $debug = 0;
 
+	var $http_debug = 1;
+
 	var $html_debug = 1;
 
 	var $log_debug = 0;
@@ -404,9 +406,9 @@ class git_client_class
 			if($d > $l)
 				return($this->SetError('could not extract the tree element object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 			$hash = $this->BinaryToHexadecimal($sha1);
-			$tree[$hash] = array(
+			$tree[$name] = array(
 				'mode'=>$mode,
-				'name'=>$name
+				'hash'=>$hash
 			);
 		}
 		return(1);
@@ -736,7 +738,7 @@ class git_client_class
 			return($this->SetError('it was not specified a valid repository', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
 		$this->repository = $arguments['Repository'];
 		$this->http = new http_class;
-		$this->http->debug = $this->debug;
+		$this->http->debug = $this->debug && $this->http_debug;
 		$this->http->html_debug = $this->html_debug;
 		$this->http->log_debug = $this->log_debug;
 		$this->http->timeout = $this->timeout;
@@ -796,12 +798,14 @@ class git_client_class
 				break;
 			if(!$this->GetTreeObject($hash, $tree))
 				return false;
-			foreach($tree as $hash => $entry)
+			$name = '';
+			foreach($tree as $name => $entry)
 			{
-				if($entry['name'] === $module_path[$path])
+				$hash = $entry['hash'];
+				if($name === $module_path[$path])
 					break;
 			}
-			if($entry['name'] !== $module_path[$path])
+			if($name !== $module_path[$path])
 				return($this->SetError('it was not found the directory tree path '.$module_path[$path], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
 			++$path;
 		}
@@ -819,6 +823,8 @@ class git_client_class
 		{
 			while(count($this->current_checkout_tree) == 0)
 			{
+				if($this->debug)
+					$this->OutputDebug('Checkout tree '.$this->checkout_tree.' of '. count($this->checkout_trees));
 				if($this->checkout_tree >= count($this->checkout_trees))
 				{
 					$no_more_files = 1;
@@ -832,11 +838,14 @@ class git_client_class
 				Reset($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
 				if($this->debug)
-					$this->OutputDebug('Tree '.$hash.' '.$this->current_checkout_tree_path);
+					$this->OutputDebug('Tree hash: '.$hash.' Path: '.$this->current_checkout_tree_path.' Contents: '.print_r($tree, 1));
 			}
+			if($this->debug)
+				$this->OutputDebug('Traversing tree with path "'.$this->current_checkout_tree_path.'"');
 			while(IsSet($this->current_checkout_tree_entry)
-			&& IsSet($this->current_checkout_tree[$hash = $this->current_checkout_tree_entry]))
+			&& IsSet($this->current_checkout_tree[$name = $this->current_checkout_tree_entry]))
 			{
+				$hash = $this->current_checkout_tree[$name]['hash'];
 				if(!IsSet($this->checkout_objects[$hash]))
 				{
 					Next($this->current_checkout_tree);
@@ -847,18 +856,20 @@ class git_client_class
 */
 				}
 				$type = $this->checkout_objects[$hash]['type'];
-				$entry = $this->current_checkout_tree[$hash];
+				$entry = $this->current_checkout_tree[$name];
 				if($type === 'tree')
 				{
-					$this->checkout_objects[$hash]['path'] = $this->current_checkout_tree_path.$entry['name'].'/';
+					$this->checkout_objects[$hash]['path'] = $this->current_checkout_tree_path.$name.'/';
 					Next($this->current_checkout_tree);
 					$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
 					$this->checkout_trees[] = $hash;
+					if($this->debug)
+						$this->OutputDebug('Found sub-tree with path "'.$this->checkout_objects[$hash]['path'].'"');
 					continue;
 				}
 				if($type !== 'blob')
 					return($this->SetError('it was returned an object of type '.$type.' for the file object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-				$base_name = $entry['name'];
+				$base_name = $name;
 				if(($path = dirname($base_name)) === '.')
 					$path = '';
 				else
@@ -962,10 +973,11 @@ class git_client_class
 				return(0);
 			$found = 0;
 			$sub_path .= $path;
-			foreach($tree as $hash => $object)
+			foreach($tree as $name => $object)
 			{
-				if($object['name'] === $path)
+				if($name === $path)
 				{
+					$hash = $object['hash'];
 					$found = 1;
 					break;
 				}
@@ -1027,10 +1039,11 @@ class git_client_class
 				foreach($file_path as $path)
 				{
 					$sub_path .= $path;
-					foreach($tree as $tree_hash => $object)
+					foreach($tree as $name => $object)
 					{
-						if($object['name'] === $path)
+						if($name === $path)
 						{
+							$tree_hash = $object['hash'];
 							$found = 1;
 							break;
 						}
