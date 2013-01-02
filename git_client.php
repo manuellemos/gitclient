@@ -97,6 +97,7 @@ class git_client_class
 	var $hexdec = '0123456789abcdef';
 	var $pack_block = '';
 	var $pack_position = 0;
+	var $pack_offset = 0;
 	var $sideband_channel;
 	var $end_of_blocks = 0;
 	var $checkout_objects = array();
@@ -306,6 +307,7 @@ class git_client_class
 				}
 				return(1);
 			}
+			$this->pack_offset += strlen($block);
 			if($this->pack_position)
 			{
 				$this->pack_block = substr($this->pack_block, $this->pack_position);
@@ -353,7 +355,7 @@ class git_client_class
 
 	Function UnpackByte(&$byte)
 	{
-		if(!$this->Unpackdata(1, $data))
+		if(!$this->UnpackData(1, $data))
 			return(0);
 		$byte = Ord($data);
 		return(1);
@@ -433,7 +435,7 @@ class git_client_class
 		return(1);
 	}
 
-	Function ApplyDelta(&$objects, $base, $delta)
+	Function ApplyDelta(&$objects, $base, $delta, &$hash)
 	{
 		if(!IsSet($objects[$base]))
 			return($this->SetError('it was specified an unknown base object to apply the delta patch', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
@@ -494,8 +496,11 @@ class git_client_class
 		return(1);
 	}
 
-	Function UnpackObject(&$objects)
+	Function UnpackObjects(&$objects, &$offsets, &$patches)
 	{
+		$offset = ($this->pack_offset - strlen($this->pack_block) + $this->pack_position);
+		if($this->debug)
+			$this->OutputDebug('Offset '.$offset);
 		if(!$this->UnpackByte($head))
 			return(0);
 		$shift = 4;
@@ -570,31 +575,57 @@ class git_client_class
 						return(0);
 					$base_offset = ($base_offset << 7) + ($head & 0x7F);
 				}
+				$base_offset = $offset - $base_offset;
 				if($this->debug)
 					$this->OutputDebug('Patch size '.$size.' Object offset '.$base_offset);
-				if(!$this->UnpackCompressedData($size, $object))
+				if(!$this->UnpackCompressedData($size, $delta))
 					return(0);
+				if(!IsSet($offsets[$base_offset]))
+					return($this->SetError('it was not found the pack object with offset '.$base_offset));
+				$base = $offsets[$base_offset];
+				if($this->debug)
+					$this->OutputDebug('Patch base object '.$base);
+				if(!$this->ApplyDelta($objects, $base, $delta, $hash))
+					return(0);
+				if($this->debug)
+					$this->OutputDebug('Patched object '.$hash);
 				break;
 			case 7:
 				if(!$this->UnpackData(20, $sha1))
 					return(0);
-				if(!$this->UnpackCompressedData($size, $object))
+				if(!$this->UnpackCompressedData($size, $delta))
 					return(0);
-				$hash = $this->BinaryToHexadecimal($sha1);
-				if($this->debug)
-					$this->OutputDebug('Patch object '.$hash);
-				if(!$this->ApplyDelta($objects, $hash, $object))
-					return(0);
+				$base = $this->BinaryToHexadecimal($sha1);
+				if(IsSet($objects[$base]))
+				{
+					if($this->debug)
+						$this->OutputDebug('Patch base object '.$base);
+					if(!$this->ApplyDelta($objects, $base, $delta, $hash))
+						return(0);
+					if($this->debug)
+						$this->OutputDebug('Patched object '.$hash);
+				}
+				else
+				{
+					if($this->debug)
+						$this->OutputDebug('Deferred patch of object '.$base);
+					$patches[] = array(
+						'base'=>$base,
+						'delta'=>$delta
+					);
+					return(1);
+				}
 				break;
 			default:
 				return($this->SetError('objects of type '.$type.' are not yet supported'));
 		}
+		$offsets[$offset] = $hash;
 		return(1);
 	}
 
 	Function StartUnpack()
 	{
-		$this->pack_position = 0;
+		$this->pack_position = $this->pack_offset = 0;
 		$this->pack_block = '';
 		UnSet($this->sideband_channel);
 		$this->end_of_blocks = 0;
@@ -613,11 +644,13 @@ class git_client_class
 
 	Function RequestUploadPack($object, &$objects)
 	{
+		if($this->debug)
+			$this->OutputDebug('Retrieving the upload pack for object '.$object);
 		$headers = array(
 			'Content-Type'=>'application/x-git-upload-pack-request',
 			'Accept'=>'application/x-git-upload-pack-result'
 		);
-		$body = $this->PackLine('want '.$object.' multi_ack_detailed side-band-64k thin-pack no-progress'/*.' ofs-delta'*/).'0000'.$this->PackLine('done');
+		$body = $this->PackLine('want '.$object.' multi_ack_detailed side-band-64k thin-pack no-progress ofs-delta').'0000'.$this->PackLine('done');
 		if(!$this->GetRequest($this->repository.'/git-upload-pack', 'POST', $headers, $body))
 			return(0);
 		if(!$this->StartUnpack()
@@ -647,16 +680,37 @@ class git_client_class
 		}
 		if($this->debug)
 			$this->OutputDebug('Pack version '.$version.' objects '.$pack_objects);
-		$objects = array();
+		$objects = $offsets = $patches = array();
 		for($o = 0; $o < $pack_objects; ++$o)
 		{
 			if($this->debug)
-				$this->OutputDebug('Object '.$o);
-			if(!$this->UnpackObject($objects))
+				$this->OutputDebug('Object '.$o.' of '.$pack_objects);
+			if(!$this->UnpackObjects($objects, $offsets, $patches))
 			{
 				$this->http->Close();
 				return(0);
 			}
+		}
+		while($remaining = count($patches))
+		{
+			if($this->debug)
+				$this->OutputDebug($remaining.' patches remaining');
+			foreach($patches as $p => $patch)
+			{
+				$base = $patch['base'];
+				if(IsSet($objects[$base]))
+				{
+					if($this->debug)
+						$this->OutputDebug('Deferred patch object '.$base);
+					if(!$this->ApplyDelta($objects, $base, $patch['delta'], $hash))
+						return(0);
+					if($this->debug)
+						$this->OutputDebug('Deferred patch object '.$hash);
+					UnSet($patches[$p]);
+				}
+			}
+			if($remaining == count($patches))
+				return($this->SetError('could not find base object '.$base.' to patch', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		}
 		$this->http->Close();
 		return(1);
@@ -866,7 +920,7 @@ class git_client_class
 					Next($this->current_checkout_tree);
 					$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
 					if($this->debug)
-						$this->OutputDebug('Found sub-tree with path "'.$path.'"');
+						$this->OutputDebug('Found sub-tree with path "'.$path.'" '.$hash);
 					continue;
 				}
 				if($type !== 'blob')
