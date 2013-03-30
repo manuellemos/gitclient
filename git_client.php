@@ -856,7 +856,7 @@ class git_client_class
 			foreach($tree as $name => $entry)
 			{
 				$hash = $entry['hash'];
-				if($name === $module_path[$path])
+				if(!strcmp($name, $module_path[$path]))
 					break;
 			}
 			if($name !== $module_path[$path])
@@ -1031,7 +1031,7 @@ class git_client_class
 			$sub_path .= $path;
 			foreach($tree as $name => $object)
 			{
-				if($name === $path)
+				if(!strcmp($name,$path))
 				{
 					$hash = $object['hash'];
 					$found = 1;
@@ -1097,7 +1097,7 @@ class git_client_class
 					$sub_path .= $path;
 					foreach($tree as $name => $object)
 					{
-						if($name === $path)
+						if(!strcmp($name,$path))
 						{
 							$tree_hash = $object['hash'];
 							$found = 1;
