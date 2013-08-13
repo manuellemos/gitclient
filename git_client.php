@@ -799,6 +799,7 @@ class git_client_class
 		$this->http->data_timeout = $this->data_timeout;
 		$this->http->user_agent = 'git/emulation';
 		$this->http->accept = '*/*';
+		$this->http->sasl_authenticate = 0;
 		$this->error = '';
 		$this->error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
 		return(1);
