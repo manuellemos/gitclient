@@ -836,7 +836,7 @@ class git_client_class
 			if($this->pack_head === $hash)
 			{
 				if(!$this->checkout_objects[$hash]['type'] == 'commit')
-					return($this->SetError('the retrieve branch object type '.$hash.' is not commit as expected'));
+					return($this->SetError('the retrieved branch object type '.$hash.' is not commit as expected'));
 				if(!$this->GetCommitObject($hash, $commit))
 					return(0);
 				if($this->debug)
@@ -1009,8 +1009,10 @@ class git_client_class
 		$this->log_commit = '';
 		for(Reset($this->checkout_objects); IsSet($this->checkout_objects[$hash = Key($this->checkout_objects)]); Next($this->checkout_objects))
 		{
-			if($this->checkout_objects[$hash]['type'] == 'commit')
+			if($this->pack_head === $hash)
 			{
+				if($this->checkout_objects[$hash]['type'] !== 'commit')
+					return($this->SetError('the retrieved branch object type '.$hash.' is not commit as expected'));
 				if(!$this->GetCommitObject($hash, $commit))
 					return(1);
 				$this->log_commit = $hash;
