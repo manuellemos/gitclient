@@ -36,6 +36,7 @@ if(!defined('REPOSITORY_ERROR_NO_ERROR'))
 	define('REPOSITORY_ERROR_INVALID_AUTHENTICATION', 3);
 	define('REPOSITORY_ERROR_COMMUNICATION_FAILURE',  4);
 	define('REPOSITORY_ERROR_CANNOT_CHECKOUT',        5);
+	define('REPOSITORY_ERROR_CANNOT_FIND_HEAD',       6);
 }
 define('GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR',      REPOSITORY_ERROR_UNSPECIFIED_ERROR);
 define('GIT_REPOSITORY_ERROR_NO_ERROR',               REPOSITORY_ERROR_NO_ERROR);
@@ -44,6 +45,7 @@ define('GIT_REPOSITORY_ERROR_CANNOT_CONNECT',         REPOSITORY_ERROR_CANNOT_CO
 define('GIT_REPOSITORY_ERROR_INVALID_AUTHENTICATION', REPOSITORY_ERROR_INVALID_AUTHENTICATION);
 define('GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE',  REPOSITORY_ERROR_COMMUNICATION_FAILURE);
 define('GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT',        REPOSITORY_ERROR_CANNOT_CHECKOUT);
+define('GIT_REPOSITORY_ERROR_CANNOT_FIND_HEAD',       REPOSITORY_ERROR_CANNOT_FIND_HEAD);
 
 class git_client_class
 {
@@ -734,7 +736,7 @@ class git_client_class
 		elseif(IsSet($upload_pack['refs/heads/master']['object']))
 			$head = $upload_pack['refs/heads/master']['object'];
 		else
-			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			return($this->SetError('the upload pack did not return the refs/heads/master object', GIT_REPOSITORY_ERROR_CANNOT_FIND_HEAD));
 		$this->pack_head = $head;
 		if(IsSet($this->pack_objects[$head]))
 			$this->checkout_objects = $this->pack_objects[$head];
