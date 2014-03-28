@@ -32,11 +32,15 @@
 	/* Output debugging information about the progress of the connection */
 	$git->debug = 0;
 
+	/* Output debugging information about the HTTP requests */
+	$git->http_debug = 0;
+
 	/* Format dubug output to display with HTML pages */
-	$git->html_debug = 1;
+	$git->html_debug = true;
 
 	$repository = 'https://github.com/gitster/git.git';
 	$module = '';
+	$log_file = 'README.md';
 
 	echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
 	flush();
@@ -65,8 +69,11 @@
 			case GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT:
 				$git->error = 'It was not possible to checkout the specified module from the Git server';
 				break;
+			case GIT_REPOSITORY_ERROR_CANNOT_FIND_HEAD:
+				$git->error = 'The repository seems to be empty.';
+				break;
 			default:
-				$git->error = 'it was returned an unexpected Git repository validation error';
+				$git->error = 'it was returned an unexpected Git repository validation error: '.$git->error;
 				break;
 		}
 	}
@@ -95,6 +102,22 @@
 					break;
 				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 				flush();
+			}
+		}
+		$arguments = array(
+			'Module'=>$module,
+			'File'=>$log_file,
+		);
+		if($git->Log($arguments))
+		{
+			for(;;)
+			{
+				$arguments = array(
+				);
+				if(!$git->GetNextLogFile($arguments, $file, $no_more_files)
+				|| $no_more_files)
+					break;
+				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 			}
 		}
 		$git->Disconnect();
