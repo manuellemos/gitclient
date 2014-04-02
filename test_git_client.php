@@ -38,9 +38,9 @@
 	/* Format dubug output to display with HTML pages */
 	$git->html_debug = true;
 
-	$repository = 'https://github.com/gitster/git.git';
+	$repository = 'https://github.com/manuellemos/xmlparser.git';
 	$module = '';
-	$log_file = 'README.md';
+	$log_file = 'README.txt';
 
 	echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
 	flush();
