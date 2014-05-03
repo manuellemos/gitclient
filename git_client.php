@@ -594,7 +594,7 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $delta))
 					return(0);
 				if(!IsSet($offsets[$base_offset]))
-					return($this->SetError('it was not found the pack object with offset '.$base_offset));
+					return($this->SetError('it was not found the pack object with offset '.$base_offset, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 				$base = $offsets[$base_offset];
 				if($this->debug)
 					$this->OutputDebug('Patch base object '.$base);
@@ -630,7 +630,7 @@ class git_client_class
 				}
 				break;
 			default:
-				return($this->SetError('objects of type '.$type.' are not yet supported'));
+				return($this->SetError('objects of type '.$type.' are not yet supported', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		}
 		$offsets[$offset] = $hash;
 		return(1);
