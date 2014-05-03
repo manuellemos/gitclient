@@ -335,24 +335,34 @@ class git_client_class
 	{
 		if(!$this->UnpackData($expanded + 1024, $compressed, 0))
 			return(0);
-		$data = gzuncompress($compressed, $expanded);
+		$data = gzuncompress($compressed);
 		if(GetType($data) != 'string')
 			return($this->SetError('could not uncompressed pack data', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		if(strlen($data) != $expanded)
 			return($this->SetError('the uncompressed data size does not match the expected size', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		$recompressed = gzcompress($data);
-		if(strncmp($compressed, $recompressed, strlen($recompressed)))
+		$read = strlen($recompressed);
+		if(strncmp($compressed, $recompressed, $read))
 		{
-			for($c = 9; $c >= 0 ; --$c)
+			$low = 0; 
+			$high = strlen($compressed);
+			while($low < $high)
 			{
-				$recompressed = gzcompress($data, $c);
-				if(!strncmp($compressed, $recompressed, strlen($recompressed)))
-					break;
+				$read = intval(($high - $low) / 2) + $low;
+				if(GetType(@gzuncompress(substr($compressed, 0, $read))) === 'boolean')
+				{
+					if($low === $read)
+					{
+						$read = $high;
+						break;
+					}
+					$low = $read;
+				}
+				else
+					$high = $read;
 			}
-			if($c < 0)
-				return($this->SetError('it was not possible to determine the length of a compressed data block', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		}
-		$this->pack_position -= strlen($compressed) - strlen($recompressed);
+		$this->pack_position -= strlen($compressed) - $read;
 		return(1);
 	}
 
