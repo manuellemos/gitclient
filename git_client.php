@@ -92,6 +92,8 @@ class git_client_class
 
 	var $validation_error = '';
 
+	var $ignore_commit_blobs = 1;
+
 
 	/* Private variables */
 	var $http;
@@ -940,8 +942,16 @@ class git_client_class
 						$this->OutputDebug('Found sub-tree with path "'.$path.'" '.$hash);
 					continue;
 				}
-				if($type !== 'blob')
-					return($this->SetError('it was returned an object of type '.$type.' for the file object '.$hash, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				switch($type)
+				{
+					case 'blob':
+						break;
+					case 'commit':
+						if($this->ignore_commit_blobs)
+							break;
+					default:
+						return($this->SetError('it was returned an object of type '.$type.' for the file object '.$hash.' named '.$name, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				}
 				$base_name = $name;
 				if(($path = dirname($base_name)) === '.')
 					$path = '';
