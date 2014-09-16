@@ -948,7 +948,11 @@ class git_client_class
 						break;
 					case 'commit':
 						if($this->ignore_commit_blobs)
-							break;
+						{
+							Next($this->current_checkout_tree);
+							$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
+							continue 2;
+						}
 					default:
 						return($this->SetError('it was returned an object of type '.$type.' for the file object '.$hash.' named '.$name, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 				}
