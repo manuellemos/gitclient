@@ -335,7 +335,7 @@ class git_client_class
 
 	Function UnpackCompressedData($expanded, &$data)
 	{
-		if(!$this->UnpackData($expanded + 1024, $compressed, 0))
+		if(!$this->UnpackData($expanded + 4096, $compressed, 0))
 			return(0);
 		$data = gzuncompress($compressed);
 		if(GetType($data) != 'string')
