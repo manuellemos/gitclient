@@ -197,7 +197,7 @@ class git_client_class
 				return($this->SetError('it was requested an inexistent resource', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
 
 			default:
-				return($this->SetError('it was returned an unexpected response status '.$this->http->response_status));
+				return($this->SetError('it was returned an unexpected response status '.$this->http->response_status, REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		}
 		return(1);
 	}
