@@ -457,7 +457,8 @@ class git_client_class
 		$position = 0;
 		if(!$this->GetBlockSize($delta, $position, $size))
 			return(0);
-		$data = $objects[$base]['data'];
+		if(!$this->GetObjectData($objects[$base], $data))
+			return false;
 		if($size != strlen($data))
 			return($this->SetError('the delta size does not match the object size', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		if(!$this->GetBlockSize($delta, $position, $remaining))
@@ -502,13 +503,26 @@ class git_client_class
 			return($this->SetError('attempted to apply corrupted delta data', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 		$type = $objects[$base]['type'];
 		$hash = $this->ObjectHash($type, $patched);
-		$objects[$hash] = array(
-			'type'=>$type,
-			'data'=>$patched,
-			'base'=>$base
-		);
+		if(!$this->StoreObjectData($type, $patched, $objects[$hash]))
+			return false;
+		$objects[$hash]['base'] = $base;
 		$objects[$base]['patched'] = $hash;
 		return(1);
+	}
+
+	Function GetObjectData($object, &$data)
+	{
+		$data = $object['data'];
+		return true;
+	}
+
+	Function StoreObjectData($type, $data, &$object)
+	{
+		$object = array(
+			'type'=>$type,
+			'data'=>$data,
+		);
+		return true;
 	}
 
 	Function UnpackObjects(&$objects, &$offsets, &$patches)
@@ -536,10 +550,8 @@ class git_client_class
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
 				$hash = $this->ObjectHash('commit', $object);
-				$objects[$hash] = array(
-					'type'=>'commit',
-					'data'=>$object,
-				);
+				if(!$this->StoreObjectData('commit', $object, $objects[$hash]))
+					return false;
 				break;
 			case 2:
 				if(!$this->UnpackCompressedData($size, $object))
@@ -552,10 +564,8 @@ class git_client_class
 					if($this->debug)
 						$this->OutputDebug($hash.' '.print_r($tree, 1));
 				}
-				$objects[$hash] = array(
-					'type'=>'tree',
-					'data'=>$object,
-				);
+				if(!$this->StoreObjectData('tree', $object, $objects[$hash]))
+					return false;
 				break;
 			case 3:
 				if(!$this->UnpackCompressedData($size, $object))
@@ -563,10 +573,8 @@ class git_client_class
 				$hash = $this->ObjectHash('blob', $object);
 				if($this->debug)
 					$this->OutputDebug($hash.' '.strlen($object).' '.$object);
-				$objects[$hash] = array(
-					'type'=>'blob',
-					'data'=>$object
-				);
+				if(!$this->StoreObjectData('blob', $object, $objects[$hash]))
+					return false;
 				break;
 			case 4:
 				if(!$this->UnpackCompressedData($size, $object))
@@ -574,10 +582,8 @@ class git_client_class
 				$hash = $this->ObjectHash('tag', $object);
 				if($this->debug)
 					$this->OutputDebug($object);
-				$objects[$hash] = array(
-					'type'=>'tag',
-					'data'=>$object
-				);
+				if(!$this->StoreObjectData('tag', $object, $objects[$hash]))
+					return false;
 				break;
 			case 6:
 				if(!$this->UnpackByte($head))
@@ -773,7 +779,9 @@ class git_client_class
 		{
 			if($this->checkout_objects[$hash]['type'] !== 'commit')
 				return($this->SetError('the object '.$hash.' is not of type commit'));
-			if(!$this->ParseCommitObject($this->checkout_objects[$hash]['data'], $commit))
+			if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
+				return false;
+			if(!$this->ParseCommitObject($data, $commit))
 				return(0);
 			if(!IsSet($commit['Headers']['tree'])
 			|| !IsSet($this->checkout_objects[$commit['Headers']['tree']]))
@@ -791,7 +799,9 @@ class git_client_class
 		{
 			if($this->checkout_objects[$hash]['type'] !== 'tree')
 				return($this->SetError('the object '.$hash.' is not of type tree'));
-			if(!$this->ParseTreeObject($this->checkout_objects[$hash]['data'], $tree))
+			if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
+				return false;
+			if(!$this->ParseTreeObject($data, $tree))
 				return(0);
 			$this->trees[$hash] = $tree;
 		}
@@ -982,6 +992,8 @@ class git_client_class
 						return($this->SetError('unexpected file mode value "'.$mode_value.'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 					$modes[substr('ugo', $m, 1)] = $mode_map[$mode_value];
 				}
+				if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
+					return false;
 				$file = array(
 					'Version'=>$hash,
 					'Name'=>basename($base_name),
@@ -989,8 +1001,8 @@ class git_client_class
 					'File'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
 					'RelativeFile'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
 					'Mode'=>$modes,
-					'Data'=>$this->checkout_objects[$hash]['data'],
-					'Size'=>strlen($this->checkout_objects[$hash]['data'])
+					'Data'=>$data,
+					'Size'=>strlen($data)
 				);
 				Next($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
