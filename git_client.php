@@ -94,6 +94,7 @@ class git_client_class
 
 	var $ignore_commit_blobs = 1;
 
+	var $maximum_object_size = 100000;
 
 	/* Private variables */
 	var $http;
@@ -512,7 +513,20 @@ class git_client_class
 
 	Function GetObjectData($object, &$data)
 	{
-		$data = $object['data'];
+		if(IsSet($object['data']))
+		{
+			$data = $object['data'];
+			return true;
+		}
+		if(fseek($object['file'], 0))
+			return $this->SetError('could not access to temporary file', REPOSITORY_ERROR_CANNOT_CHECKOUT);
+		$data = '';
+		while(!feof($object['file']))
+		{
+			if(($block = fread($object['file'], 10000)) === false)
+				return $this->SetError('could not read temporary file', REPOSITORY_ERROR_CANNOT_CHECKOUT);
+			$data .= $block;
+		}
 		return true;
 	}
 
@@ -520,8 +534,22 @@ class git_client_class
 	{
 		$object = array(
 			'type'=>$type,
-			'data'=>$data,
 		);
+		if(strlen($data) < $this->maximum_object_size)
+		{
+			$object['data'] = $data;
+		}
+		else
+		{
+			if(($object['file'] = tmpfile()) === false)
+				return $this->SetError('could not create temporary file', REPOSITORY_ERROR_CANNOT_CHECKOUT);
+			if(strlen($data)
+			&& !fputs($object['file'], $data))
+			{
+				fclose($object['file']);
+				return $this->SetError('could not write to temporary file', REPOSITORY_ERROR_CANNOT_CHECKOUT);
+			}
+		}
 		return true;
 	}
 
