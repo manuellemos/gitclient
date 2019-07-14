@@ -574,6 +574,8 @@ class git_client_class
 			$this->OutputDebug('Type '.$type.' Size '.$size);
 		switch($type)
 		{
+			case 0:
+				return 1;
 			case 1:
 				if(!$this->UnpackCompressedData($size, $object))
 					return(0);
