@@ -77,7 +77,8 @@ class GitClient
     {
         $action = "ls-remote {$config['Repository']}";
         $data = $this->execCommandForClient($action);
-        $this->error = $error_code = $data['exitCode'];
+        $error_code = $data['exitCode'];
+        $this->error = $error_code !== 0 ? $error_code : null;
         return $data['exitCode'] === 0;
     }
 
