@@ -18,12 +18,11 @@
 <UL>
     <?php
 
-    require('FilesManager.php');
-    require('GitClient.php');
     require('git_client.php');
+    require('git_program_client.php');
 
     set_time_limit(0);
-    $git = new GitClient();
+    $git = new git_program_client_class;
 
     /* Connection timeout */
     $git->timeout = 20;
@@ -40,9 +39,9 @@
     /* Format dubug output to display with HTML pages */
     $git->html_debug = true;
 
-    $repository = 'https://github.com/manuellemos/xmlparser.git';
+    $repository = 'https://github.com/msalsas/itransformer.git';
     $module = '';
-    $log_file = 'README.txt';
+    $log_file = 'README.md';
 
     echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
     flush();
@@ -95,7 +94,7 @@
                 if (!$git->GetNextFile($arguments, $file, $no_more_files)
                     || $no_more_files)
                     break;
-                echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
+//                echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
                 flush();
             }
         }
