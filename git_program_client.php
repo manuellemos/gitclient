@@ -8,6 +8,14 @@
 class git_client_files_manager_class
 {
     /**
+     * @var string
+     */
+    public $error = '';
+    /**
+     * @var string
+     */
+    public $error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
+    /**
      * Location of the cloned repo
      * @var string
      */
@@ -25,6 +33,30 @@ class git_client_files_manager_class
     private $blockedDirectories = [
         ".git"
     ];
+
+    /**
+     * @var callable
+     */
+    private $executeCommand;
+
+    /**
+     * git_client_files_manager_class constructor.
+     * @param callable $executeCommand
+     */
+    public function __construct($executeCommand)
+    {
+        if (!is_callable($executeCommand)) {
+            $this->SetError('executeCommand must be callable', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
+        }
+        $this->executeCommand = $executeCommand;
+    }
+
+    public function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
+    {
+        $this->error_code = $error_code;
+        $this->error = $error;
+        return false;
+    }
 
     /**
      * Set the location to the cloned repo
@@ -54,8 +86,8 @@ class git_client_files_manager_class
     {
 
         if (!$this->location) {
-			$this->SetError('location not set', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS);
-			return null;
+            $this->SetError('location not set', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS);
+            return null;
         }
         return $this->getFilesAndContents($this->location, $logFile);
     }
@@ -98,12 +130,21 @@ class git_client_files_manager_class
             $relativePath = substr($fullPath, strlen($this->absoluteLocation));
         }
 
+        $fullPath = realpath($fileInfo->getPathname());
+
         $data = file_get_contents($fileInfo->getPathname());
 
+        $getVersion = call_user_func_array($this->executeCommand, ["hash-object {$fullPath}"]);
+        if ($getVersion['exitCode'] !== 0) {
+            $this->SetError('Unable to get file version', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
+        }
+        $version = $getVersion['output'];
+
         return [
+            'Version' => $version,
             'Name' => $fileInfo->getFilename(),
             'PathName' => $fileInfo->getPathname(),
-            'File' => realpath($fileInfo->getPathname()),
+            'File' => $fullPath,
             'RelativeFile' => $relativePath,
             'Size' => strlen($data),
             'Data' => $data
@@ -121,7 +162,9 @@ class git_client_files_manager_class
         return $this->manageFiles($logFile);
     }
 
-};
+}
+
+;
 
 /**
  * The main class for this "library"
@@ -138,6 +181,12 @@ class git_program_client_class
      * @var string
      */
     public $error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
+    /**
+     * The base directory where the cloned git repos will be stored temporarily
+     * Change this according to your need
+     * @var string
+     */
+    public $tmpDirectory = "/tmp";
     /**
      * URL of the remote repository
      * @var string
@@ -158,12 +207,6 @@ class git_program_client_class
      * @var string
      */
     private $tmpLocation;
-    /**
-     * The base directory where the cloned git repos will be stored temporarily
-     * Change this according to your need
-     * @var string
-     */
-    public $tmpDirectory = "";
     /**
      * Contains the status of whether we are connected to the repo or not
      * @var bool
@@ -190,15 +233,8 @@ class git_program_client_class
 
     public function __construct()
     {
-        $this->filesManager = new git_client_files_manager_class();
+        $this->filesManager = new git_client_files_manager_class([$this, 'execCommandForClient']);
     }
-
-	Function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
-	{
-		$this->error_code = $error_code;
-		$this->error = $error;
-		return false;
-	}
 
     /**
      * Check if the provided repo is valid or not
@@ -220,33 +256,31 @@ class git_program_client_class
      * @param string $action
      * @return array
      */
-    private function execCommandForClient($action)
+    public function execCommandForClient($action)
     {
-        $command = "cd \"{$this->tmpLocation}\" ; {$this->client} {$action} 2>&1";
+        $command = "cd \"{$this->tmpLocation}\" && {$this->client} {$action} 2>&1";
         error_log($command);
-		if(!($pipe = popen($command, 'r')))
-			return['output' => '', 'exitCode'=>-3, 'error'=>'it was not possible to start the git command'];
-		for($output = ''; !feof($pipe);)
-		{
-			if(!($data = fread($pipe, 8000)))
-			{
-				if(feof($pipe))
-					break;
-				pclose($pipe);
-				return['output' => '', 'exitCode'=>-2, 'error'=>'it was not possible to read the git command output'];
-			}
-			$output .= $data;
-		}
-		$code = pclose($pipe);
-		if($code === -1)
-		{
-			$e = error_get_last();
-			$error = $e['message'];
-			error_log(serialize($e));
-			error_log($output);
-		}
-		$error = '';
-        return ['output' => $output, 'exitCode' => $code, 'error'=>$error];
+        if (!($pipe = popen($command, 'r'))) {
+            return ['output' => '', 'exitCode' => -3, 'error' => 'it was not possible to start the git command'];
+        }
+        for ($output = ''; !feof($pipe);) {
+            if (!($data = fread($pipe, 8000))) {
+                if (feof($pipe))
+                    break;
+                pclose($pipe);
+                return ['output' => '', 'exitCode' => -2, 'error' => 'it was not possible to read the git command output'];
+            }
+            $output .= $data;
+        }
+        $error = '';
+        $code = pclose($pipe);
+        if ($code === -1) {
+            $e = error_get_last();
+            $error = $e['message'];
+            error_log(serialize($e));
+            error_log($output);
+        }
+        return ['output' => $output, 'exitCode' => $code, 'error' => $error];
     }
 
     /**
@@ -256,21 +290,32 @@ class git_program_client_class
      */
     public function connect($arguments)
     {
-		if(!IsSet($arguments['Repository']))
-			return($this->SetError('it was not specified the repository URL', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
+        if (!IsSet($arguments['Repository'])) {
+            return ($this->SetError('it was not specified the repository URL', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
+        }
 
-		if(!preg_match('/^https?:\\/\\/(([^:@]+)?(:([^@]+))?@)?([^:\\/]+)(:[^\\/]+)?\\/(.*)$/', $arguments['Repository'], $m))
-			return($this->SetError('it was not specified a valid repository', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
+        if (!preg_match('/^https?:\\/\\/(([^:@]+)?(:([^@]+))?@)?([^:\\/]+)(:[^\\/]+)?\\/(.*)$/', $arguments['Repository'], $m)) {
+            return ($this->SetError('it was not specified a valid repository', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
+        }
 
         $this->repository = $arguments['Repository'];
-        if(!$this->generateTmpLocation())
-			return false;
+        if (!$this->generateTmpLocation()) {
+            return false;
+        }
         $clone = $this->cloneRepo();
-        if ($clone['exitCode'] !== 0)
-			return($this->SetError('Unable to access the remote repository', GIT_REPOSITORY_ERROR_CANNOT_CONNECT));
+        if ($clone['exitCode'] !== 0) {
+            return ($this->SetError('Unable to access the remote repository', GIT_REPOSITORY_ERROR_CANNOT_CONNECT));
+        }
         $this->filesManager->setLocation($this->tmpLocation);
         $this->connected = true;
         return true;
+    }
+
+    private function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
+    {
+        $this->error_code = $error_code;
+        $this->error = $error;
+        return false;
     }
 
     /**
@@ -279,15 +324,15 @@ class git_program_client_class
     private function generateTmpLocation()
     {
         $CloneDirectoryName = preg_replace("/[^0-9a-zA-Z]/m", "", $this->repository);
-        if(($path = tempnam(strlen($this->tmpDirectory) ? $this->tmpDirectory : sys_get_temp_dir(), $CloneDirectoryName)) === false)
-			return($this->SetError('it was not possible to setup a temporary directory to retrieve the repository'));
-		if(file_exists($path))
-			unlink($path);
-		if(!mkdir($path))
-			return($this->SetError('it was not possible to create the temporary directory to retrieve the repository'));
-		error_log($path);
-		$this->tmpLocation = $path;
-		return true;
+        if (($path = tempnam(strlen($this->tmpDirectory) ? $this->tmpDirectory : sys_get_temp_dir(), $CloneDirectoryName)) === false)
+            return ($this->SetError('it was not possible to setup a temporary directory to retrieve the repository'));
+        if (file_exists($path))
+            unlink($path);
+        if (!mkdir($path))
+            return ($this->SetError('it was not possible to create the temporary directory to retrieve the repository'));
+        error_log($path);
+        $this->tmpLocation = $path;
+        return true;
     }
 
     /**
@@ -307,15 +352,15 @@ class git_program_client_class
     public function disconnect()
     {
         if (!$this->connected) {
-			return($this->SetError('Not connected to any repository', GIT_REPOSITORY_ERROR_CANNOT_CONNECT));
+            return ($this->SetError('Not connected to any repository', GIT_REPOSITORY_ERROR_CANNOT_CONNECT));
         }
 
         if (!$this->tmpLocation) {
-			return($this->SetError('No cloned repository found'));
+            return ($this->SetError('No cloned repository found'));
         }
 
         if (!$this->deleteClonedRepoContent($this->tmpLocation)) {
-			return($this->SetError('Unable to delete the cloned repository'));
+            return ($this->SetError('Unable to delete the cloned repository'));
         }
         $this->connected = false;
         return true;
@@ -359,11 +404,11 @@ class git_program_client_class
     {
         $clone = $this->execCommandForClient("checkout {$this->branch}");
         if ($clone['exitCode'] !== 0) {
-			return($this->SetError("Unable to checkout the branch {$this->branch}. ".$clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
+            return ($this->SetError("Unable to checkout the branch {$this->branch}. " . $clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
         }
         $repository_files = $this->filesManager->getRepoFiles();
-        if(!IsSet($repository_files))
-			return false;
+        if (!IsSet($repository_files))
+            return false;
         $this->repoFiles = $repository_files;
         return true;
     }
@@ -394,11 +439,11 @@ class git_program_client_class
     public function Log($config)
     {
         if (!$config['File']) {
-			return($this->SetError('Log File not set'));
+            return ($this->SetError('Log File not set'));
         }
         $log_files = $this->filesManager->getLogFiles($config['File']);
-        if(!IsSet($log_files))
-			return false;
+        if (!IsSet($log_files))
+            return false;
         $this->logFiles = $log_files;
         return true;
     }
