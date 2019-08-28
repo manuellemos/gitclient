@@ -24,24 +24,21 @@
     set_time_limit(0);
     $git = new git_program_client_class;
 
-    /* Connection timeout */
-    $git->timeout = 20;
-
-    /* Data transfer timeout */
-    $git->data_timeout = 60;
-
     /* Output debugging information about the progress of the connection */
-    $git->debug = 0;
+    $git->debug = true;
 
-    /* Output debugging information about the HTTP requests */
-    $git->http_debug = 0;
+    /* Output debugging information to PHP error log */
+    $git->log_debug = true;
 
     /* Format dubug output to display with HTML pages */
-    $git->html_debug = true;
+    $git->html_debug = false;
+    
+    $git->temporary_directory = 'tmp';
 
     $repository = 'https://github.com/msalsas/itransformer.git';
     $module = '';
     $log_file = 'README.md';
+    $log_file = '.gitignore';
 
     echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
     flush();
@@ -85,6 +82,7 @@
     }
     if (strlen($git->error) == 0
         && $git->Connect($arguments)) {
+/*
         $arguments = array(
             'Module' => $module
         );
@@ -94,16 +92,17 @@
                 if (!$git->GetNextFile($arguments, $file, $no_more_files)
                     || $no_more_files)
                     break;
-//                echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
+				UnSet($file['Data']);
+                echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
                 flush();
             }
         }
+*/
         $arguments = array(
             'Module' => $module,
             'File' => $log_file,
         );
         if ($git->Log($arguments)) {
-            $git->GetNextLogFile($arguments, $file, $no_more_files);
             for (; ;) {
                 $arguments = array();
                 if (!$git->GetNextLogFile($arguments, $file, $no_more_files)

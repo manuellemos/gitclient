@@ -2,7 +2,7 @@
 /*
  * test_git_client.php
  *
- * @(#) $Id$
+ * @(#) $Id: test_git_client.php,v 1.3 2014/04/02 05:49:06 mlemos Exp $
  *
  */
 
@@ -36,11 +36,66 @@
 	$git->http_debug = 0;
 
 	/* Format dubug output to display with HTML pages */
-	$git->html_debug = true;
+	$git->html_debug = false;
 
 	$repository = 'https://github.com/manuellemos/xmlparser.git';
 	$module = '';
 	$log_file = 'README.txt';
+
+	$repository = 'https://github.com/slavepens/integrity-md5-class.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/garpeer/adfly.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/jas-/jQuery.pidCrypt';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/igorescobar/nodejs-playground.git';
+	$module = 'crosswords';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/mark-rolich/RulersGuides.js.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/dyorg/Lean.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'http://git.code.sf.net/p/phpprefixer/code';
+	$module = '';
+	$log_file = 'README.txt';
+	
+	$repository = 'https://github.com/picamator/SteganographyKit.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/crocodile2u/zhandlersocket.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/niceit/S3FilesManager.git';
+	$module = '';
+	$log_file = 'index.php';
+ 
+	$repository = 'https://github.com/msalsas/itransformer.git';
+	$module = '';
+	$log_file = 'README.md';
+
+	$repository = 'https://github.com/abriceno/codecard.git';
+	$module = '';
+	$log_file = 'README.md';
+	
+	$repository = 'https://github.com/cycle/orm.git';
+	$module = '';
+
+	$repository = 'https://github.com/msalsas/itransformer.git';
+	$module = '';
+	$log_file = 'README.md';
 
 	echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
 	flush();
@@ -93,7 +148,7 @@
 		);
 		if($git->Checkout($arguments))
 		{
-			for(;;)
+			for($files=0;;++$files)
 			{
 				$arguments = array(
 				);
@@ -103,11 +158,13 @@
 				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 				flush();
 			}
+			echo $files.' files',"\n";
 		}
 		$arguments = array(
 			'Module'=>$module,
 			'File'=>$log_file,
 		);
+/*
 		if($git->Log($arguments))
 		{
 			for(;;)
@@ -120,6 +177,7 @@
 				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 			}
 		}
+*/
 		$git->Disconnect();
 	}
 	if(strlen($git->error))
