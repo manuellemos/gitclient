@@ -16,6 +16,19 @@ class git_client_files_manager_class
      */
     public $error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
     /**
+     * @var bool
+     */
+    public $debug = false;
+    /**
+     * @var bool
+     */
+	public $html_debug = true;
+    /**
+     * @var bool
+     */
+	public $log_debug = false;
+
+    /**
      * Location of the cloned repo
      * @var string
      */
@@ -51,6 +64,23 @@ class git_client_files_manager_class
         $this->executeCommand = $executeCommand;
     }
 
+	private function OutputDebug($message)
+	{
+		if($this->debug)
+		{
+			if($this->log_debug)
+				error_log($message);
+			else
+			{
+				$message .= "\n";
+				if($this->html_debug)
+					$message='<tt>'.str_replace("\n", "<br />\n", HtmlSpecialChars($message)).'</tt>';
+				echo $message;
+				flush();
+			}
+		}
+	}
+
     public function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
     {
         $this->error_code = $error_code;
@@ -72,9 +102,9 @@ class git_client_files_manager_class
      * Get the data for files in the repo
      * @return array
      */
-    public function getRepoFiles()
+    public function getRepoFiles($contents = true)
     {
-        return $this->manageFiles();
+        return $this->manageFiles(null, $contents);
     }
 
     /**
@@ -82,14 +112,14 @@ class git_client_files_manager_class
      * @param string|null $logFile
      * @return array
      */
-    private function manageFiles($logFile = null)
+    private function manageFiles($logFile = null, $contents)
     {
 
         if (!$this->location) {
             $this->SetError('location not set', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS);
             return null;
         }
-        return $this->getFilesAndContents($this->location, $logFile);
+        return $this->getFilesAndContents($this->location, $logFile, $contents);
     }
 
     /**
@@ -98,19 +128,19 @@ class git_client_files_manager_class
      * @param null|string $fileName Use this to only get the files that match the name
      * @return array
      */
-    private function getFilesAndContents($dir, $fileName = null)
+    private function getFilesAndContents($dir, $fileName = null, $contents = true)
     {
-        $files = [];
+        $files = array();
         foreach (new DirectoryIterator($dir) as $fileInfo) {
             if ($fileInfo->isDot()) {
                 continue;
             } else if ($fileInfo->isDir() && !in_array($fileInfo->getFilename(), $this->blockedDirectories)) {
-                $files[] = array_merge($files, $this->getFilesAndContents($fileInfo->getPathname()));
+                $files = array_merge($files, $this->getFilesAndContents($fileInfo->getPathname(), $fileName, $contents));
             } else if ($fileInfo->isFile()) {
                 if ($fileName && $fileInfo->getFilename() !== $fileName) {
                     continue;
                 }
-                $files[] = $this->prepareFileInfo($fileInfo);
+                $files[] = $this->prepareFileInfo($fileInfo, $contents);
             }
         }
 
@@ -122,34 +152,31 @@ class git_client_files_manager_class
      * @param DirectoryIterator $fileInfo
      * @return array
      */
-    private function prepareFileInfo(DirectoryIterator $fileInfo)
+    private function prepareFileInfo(DirectoryIterator $fileInfo, $contents)
     {
-        $fullPath = realpath($fileInfo->getPathname());
-        $relativePath = $fileInfo->getPathname();
-        if (substr($fullPath, 0, strlen($this->absoluteLocation)) == $this->absoluteLocation) {
-            $relativePath = substr($fullPath, strlen($this->absoluteLocation));
-        }
-
-        $fullPath = realpath($fileInfo->getPathname());
-
-        $data = file_get_contents($fileInfo->getPathname());
-
+        $fullPath = realpath($r = $relativePath = $fileInfo->getPathname());
+        if (substr($fullPath, 0, strlen($this->absoluteLocation)) == $this->absoluteLocation)
+            $relativePath = substr($fullPath, strlen($this->absoluteLocation) + 1);
         $getVersion = call_user_func_array($this->executeCommand, ["hash-object {$fullPath}"]);
         if ($getVersion['exitCode'] !== 0) {
             $this->SetError('Unable to get file version', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
         }
         $version = $getVersion['output'];
-
-        return [
+        $file = array(
             'Version' => $version,
             'Name' => $fileInfo->getFilename(),
             'PathName' => $fileInfo->getPathname(),
             'File' => $fullPath,
             'RelativeFile' => $relativePath,
-            'Size' => strlen($data),
-            'Data' => $data
-        ];
-
+            'Fuck'=>__LINE__.' '.print_r(array($this->absoluteLocation, $r, $relativePath), 1)
+		);
+		if($contents)
+		{
+			$data = file_get_contents($file['PathName']);
+			$file['Size'] = strlen($data);
+			$file['Data'] = $data;
+        }
+        return $file;
     }
 
     /**
@@ -157,19 +184,16 @@ class git_client_files_manager_class
      * @param string $logFile
      * @return array
      */
-    public function getLogFiles($logFile)
+    public function getLogFiles($logFile, $contents = true)
     {
-        return $this->manageFiles($logFile);
+        return $this->manageFiles($logFile, $contents);
     }
-
-}
-
-;
+};
 
 /**
  * The main class for this "library"
  * Class GitClient
- * @package GitClient
+ * @package git_program_client_class
  */
 class git_program_client_class
 {
@@ -182,11 +206,23 @@ class git_program_client_class
      */
     public $error_code = GIT_REPOSITORY_ERROR_NO_ERROR;
     /**
+     * @var bool
+     */
+    public $debug = false;
+    /**
+     * @var bool
+     */
+	public $html_debug = true;
+    /**
+     * @var bool
+     */
+	public $log_debug = false;
+    /**
      * The base directory where the cloned git repos will be stored temporarily
      * Change this according to your need
      * @var string
      */
-    public $tmpDirectory = "/tmp";
+    public $temporary_directory = "/tmp";
     /**
      * URL of the remote repository
      * @var string
@@ -217,7 +253,7 @@ class git_program_client_class
      * The file manager to handle the process of reading the repo files
      * @var FilesManager
      */
-    private $filesManager;
+    private $files_manager;
 
     /**
      * Contains the data for files in the repo
@@ -231,9 +267,36 @@ class git_program_client_class
      */
     private $logFiles;
 
+	private function OutputDebug($message)
+	{
+		if($this->debug)
+		{
+			if($this->log_debug)
+				error_log($message);
+			else
+			{
+				$message .= "\n";
+				if($this->html_debug)
+					$message='<tt>'.str_replace("\n", "<br />\n", HtmlSpecialChars($message)).'</tt>';
+				echo $message;
+				flush();
+			}
+		}
+	}
+
+    private function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
+    {
+        $this->error_code = $error_code;
+        $this->error = $error;
+        return false;
+    }
+
     public function __construct()
     {
-        $this->filesManager = new git_client_files_manager_class([$this, 'execCommandForClient']);
+        $this->files_manager = new git_client_files_manager_class([$this, 'execCommandForClient']);
+        $this->files_manager->debug = $this->debug;
+        $this->files_manager->log_debug = $this->log_debug;
+        $this->files_manager->html_debug = $this->html_debug;
     }
 
     /**
@@ -244,7 +307,9 @@ class git_program_client_class
      */
     public function validate($config, &$error_code)
     {
-        $action = "ls-remote {$config['Repository']}";
+		$repository = $config['Repository'];
+		$this->OutputDebug('Validating repository: '.$repository);
+        $action = "ls-remote {$repository}";
         $data = $this->execCommandForClient($action);
         $error_code = $data['exitCode'];
         $this->error = $error_code !== 0 ? $error_code : null;
@@ -259,7 +324,7 @@ class git_program_client_class
     public function execCommandForClient($action)
     {
         $command = "cd \"{$this->tmpLocation}\" && {$this->client} {$action} 2>&1";
-        error_log($command);
+		$this->OutputDebug('Executing Git command: '.$command);
         if (!($pipe = popen($command, 'r'))) {
             return ['output' => '', 'exitCode' => -3, 'error' => 'it was not possible to start the git command'];
         }
@@ -277,8 +342,6 @@ class git_program_client_class
         if ($code === -1) {
             $e = error_get_last();
             $error = $e['message'];
-            error_log(serialize($e));
-            error_log($output);
         }
         return ['output' => $output, 'exitCode' => $code, 'error' => $error];
     }
@@ -297,25 +360,19 @@ class git_program_client_class
         if (!preg_match('/^https?:\\/\\/(([^:@]+)?(:([^@]+))?@)?([^:\\/]+)(:[^\\/]+)?\\/(.*)$/', $arguments['Repository'], $m)) {
             return ($this->SetError('it was not specified a valid repository', GIT_REPOSITORY_ERROR_INVALID_SERVER_ADDRESS));
         }
-
         $this->repository = $arguments['Repository'];
+
         if (!$this->generateTmpLocation()) {
             return false;
         }
+		$this->OutputDebug('Connecting to repository '.$this->repository);
         $clone = $this->cloneRepo();
         if ($clone['exitCode'] !== 0) {
             return ($this->SetError('Unable to access the remote repository', GIT_REPOSITORY_ERROR_CANNOT_CONNECT));
         }
-        $this->filesManager->setLocation($this->tmpLocation);
+        $this->files_manager->setLocation($this->tmpLocation);
         $this->connected = true;
         return true;
-    }
-
-    private function SetError($error, $error_code = GIT_REPOSITORY_ERROR_UNSPECIFIED_ERROR)
-    {
-        $this->error_code = $error_code;
-        $this->error = $error;
-        return false;
     }
 
     /**
@@ -324,13 +381,12 @@ class git_program_client_class
     private function generateTmpLocation()
     {
         $CloneDirectoryName = preg_replace("/[^0-9a-zA-Z]/m", "", $this->repository);
-        if (($path = tempnam(strlen($this->tmpDirectory) ? $this->tmpDirectory : sys_get_temp_dir(), $CloneDirectoryName)) === false)
+        if (($path = tempnam(strlen($this->temporary_directory) ? $this->temporary_directory : sys_get_temp_dir(), $CloneDirectoryName)) === false)
             return ($this->SetError('it was not possible to setup a temporary directory to retrieve the repository'));
         if (file_exists($path))
             unlink($path);
         if (!mkdir($path))
             return ($this->SetError('it was not possible to create the temporary directory to retrieve the repository'));
-        error_log($path);
         $this->tmpLocation = $path;
         return true;
     }
@@ -400,15 +456,17 @@ class git_program_client_class
      * @param array $config
      * @return bool
      */
-    public function checkout($config)
+    public function Checkout($config)
     {
+		$this->OutputDebug('Checkout...');
         $clone = $this->execCommandForClient("checkout {$this->branch}");
         if ($clone['exitCode'] !== 0) {
             return ($this->SetError("Unable to checkout the branch {$this->branch}. " . $clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
         }
-        $repository_files = $this->filesManager->getRepoFiles();
+        $repository_files = $this->files_manager->getRepoFiles(false);
         if (!IsSet($repository_files))
-            return false;
+			return $this->SetError($this->files_manager->error, $this->files_manager->error_code);
+		$this->OutputDebug('Checked out '.count($repository_files).' files.');
         $this->repoFiles = $repository_files;
         return true;
     }
@@ -420,14 +478,29 @@ class git_program_client_class
      * @param $no_more_files
      * @return bool
      */
-    public function getNextFile($config, &$file, &$no_more_files)
+    public function GetNextFile($config, &$file, &$no_more_files)
     {
-        $no_more_files = false;
+		$this->OutputDebug('Get next checked out file.');
         $file = current($this->repoFiles);
-        next($this->repoFiles);
-        if (key($this->repoFiles) === null) {
-            $no_more_files = true;
+        if(IsSet($file))
+        {
+			if(!IsSet($file['PathName']))
+			{
+//				$this->OutputDebug(print_r($file, 1));
+				return $this->SetError('it was not possible to retrieve the repository file '.print_r($file, 1));
+			}
+			else
+			{
+				if(($data = file_get_contents($file['PathName'])) === false)
+				{
+					return $this->SetError('it was not possible to read the repository file contents'.print_r($file, 1));
+				}
+				$file['Size'] = strlen($data);
+				$file['Data'] = $data;
+			}
         }
+        next($this->repoFiles);
+        $no_more_files = (key($this->repoFiles) === null);
         return true;
     }
 
@@ -438,12 +511,13 @@ class git_program_client_class
      */
     public function Log($config)
     {
-        if (!$config['File']) {
+        if (!IsSet($config['File']))
             return ($this->SetError('Log File not set'));
-        }
-        $log_files = $this->filesManager->getLogFiles($config['File']);
+		$file = $config['File'];
+		$this->OutputDebug('Get the log of file: '.$file);
+        $log_files = $this->files_manager->getLogFiles($file, true);
         if (!IsSet($log_files))
-            return false;
+            return $this->SetError($this->files_manager->error, $this->files_manager->error_code);
         $this->logFiles = $log_files;
         return true;
     }
@@ -457,12 +531,9 @@ class git_program_client_class
      */
     public function GetNextLogFile($config, &$file, &$no_more_files)
     {
-        $no_more_files = false;
         $file = current($this->logFiles);
         next($this->logFiles);
-        if (key($this->logFiles) === null) {
-            $no_more_files = true;
-        }
+        $no_more_files = (key($this->logFiles) === null);
         return true;
     }
 
