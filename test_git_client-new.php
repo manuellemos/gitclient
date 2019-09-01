@@ -38,7 +38,6 @@
     $repository = 'https://github.com/msalsas/itransformer.git';
     $module = '';
     $log_file = 'README.md';
-    $log_file = '.gitignore';
 
     echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
     flush();
@@ -82,7 +81,6 @@
     }
     if (strlen($git->error) == 0
         && $git->Connect($arguments)) {
-/*
         $arguments = array(
             'Module' => $module
         );
@@ -97,10 +95,11 @@
                 flush();
             }
         }
-*/
         $arguments = array(
             'Module' => $module,
             'File' => $log_file,
+//			'Revision' => 'a47e98393a5740d68ff78c34d29f68e22d38b2d0',
+//			'NewerThan' => '2013-11-28 15:59:46 +0000'
         );
         if ($git->Log($arguments)) {
             for (; ;) {

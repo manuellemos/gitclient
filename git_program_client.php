@@ -59,9 +59,10 @@ class git_client_files_manager_class
     public function __construct($executeCommand)
     {
         if (!is_callable($executeCommand)) {
-            $this->SetError('executeCommand must be callable', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
+            return $this->SetError('executeCommand must be callable', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
         }
         $this->executeCommand = $executeCommand;
+        return true;
     }
 
 	private function OutputDebug($message)
@@ -137,10 +138,13 @@ class git_client_files_manager_class
             } else if ($fileInfo->isDir() && !in_array($fileInfo->getFilename(), $this->blockedDirectories)) {
                 $files = array_merge($files, $this->getFilesAndContents($fileInfo->getPathname(), $fileName, $contents));
             } else if ($fileInfo->isFile()) {
-                if ($fileName && $fileInfo->getFilename() !== $fileName) {
+                if (IsSet($fileName) && substr($fileInfo->getPathname(), strlen($this->absoluteLocation) + 1) !== $fileName) {
                     continue;
                 }
-                $files[] = $this->prepareFileInfo($fileInfo, $contents);
+                $file = $this->prepareFileInfo($fileInfo, $contents);
+                if(!IsSet($file))
+					return null;
+                $files[] = $file;
             }
         }
 
@@ -154,12 +158,14 @@ class git_client_files_manager_class
      */
     private function prepareFileInfo(DirectoryIterator $fileInfo, $contents)
     {
-        $fullPath = realpath($r = $relativePath = $fileInfo->getPathname());
+        $fullPath = realpath($relativePath = $fileInfo->getPathname());
         if (substr($fullPath, 0, strlen($this->absoluteLocation)) == $this->absoluteLocation)
             $relativePath = substr($fullPath, strlen($this->absoluteLocation) + 1);
-        $getVersion = call_user_func_array($this->executeCommand, ["hash-object {$fullPath}"]);
-        if ($getVersion['exitCode'] !== 0) {
+        $getVersion = call_user_func_array($this->executeCommand, ["hash-object ".escapeshellarg($fullPath)]);
+        if ($getVersion['exitCode'] !== 0)
+        {
             $this->SetError('Unable to get file version', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE);
+            return null;
         }
         $version = $getVersion['output'];
         $file = array(
@@ -168,7 +174,6 @@ class git_client_files_manager_class
             'PathName' => $fileInfo->getPathname(),
             'File' => $fullPath,
             'RelativeFile' => $relativePath,
-            'Fuck'=>__LINE__.' '.print_r(array($this->absoluteLocation, $r, $relativePath), 1)
 		);
 		if($contents)
 		{
@@ -218,7 +223,7 @@ class git_program_client_class
      */
 	public $log_debug = false;
     /**
-     * The base directory where the cloned git repos will be stored temporarily
+     * The base directory where the cloned git repositories will be stored temporarily
      * Change this according to your need
      * @var string
      */
@@ -239,33 +244,53 @@ class git_program_client_class
      */
     private $client = "git";
     /**
-     * Exact location of the cloned repo
+     * Exact location of the cloned repository
      * @var string
      */
     private $tmpLocation;
     /**
-     * Contains the status of whether we are connected to the repo or not
+     * Contains the status of whether we are connected to the repository or not
      * @var bool
      */
     private $connected;
 
     /**
-     * The file manager to handle the process of reading the repo files
+     * The file manager to handle the process of reading the repository files
      * @var FilesManager
      */
     private $files_manager;
 
     /**
-     * Contains the data for files in the repo
+     * Contains the data for files in the repository
      * @var array
      */
     private $repoFiles;
 
     /**
-     * Contains the data for log files in the repo
+     * Contains the data for log files in the repository
      * @var array
      */
     private $logFiles;
+    /**
+     * Contains an array with the next log file in the repository
+     * @var array
+     */
+    private $next_log_file;
+    /**
+     * Hash of the revision to get the file log
+     * @var string
+     */
+	private $log_revision = '';
+    /**
+     * Timestamp lower limitr of the revision to get the file log
+     * @var integer
+     */
+	private $log_newer_date = 0;
+    /**
+     * Valid characters accepted in repository file hash
+     * @var string
+     */
+	private $hexdec = '0123456789abcdef';
 
 	private function OutputDebug($message)
 	{
@@ -309,8 +334,7 @@ class git_program_client_class
     {
 		$repository = $config['Repository'];
 		$this->OutputDebug('Validating repository: '.$repository);
-        $action = "ls-remote {$repository}";
-        $data = $this->execCommandForClient($action);
+        $data = $this->execCommandForClient("ls-remote ".escapeshellarg($repository));
         $error_code = $data['exitCode'];
         $this->error = $error_code !== 0 ? $error_code : null;
         return $data['exitCode'] === 0;
@@ -397,8 +421,7 @@ class git_program_client_class
      */
     private function cloneRepo()
     {
-        $action = "clone {$this->repository} {$this->tmpLocation}";
-        return $this->execCommandForClient($action);
+        return $this->execCommandForClient("clone ".escapeshellarg($this->repository)."  ".escapeshellarg($this->tmpLocation));
     }
 
     /**
@@ -459,7 +482,7 @@ class git_program_client_class
     public function Checkout($config)
     {
 		$this->OutputDebug('Checkout...');
-        $clone = $this->execCommandForClient("checkout {$this->branch}");
+        $clone = $this->execCommandForClient("checkout ".escapeshellarg($this->branch));
         if ($clone['exitCode'] !== 0) {
             return ($this->SetError("Unable to checkout the branch {$this->branch}. " . $clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
         }
@@ -485,19 +508,11 @@ class git_program_client_class
         if(IsSet($file))
         {
 			if(!IsSet($file['PathName']))
-			{
-//				$this->OutputDebug(print_r($file, 1));
-				return $this->SetError('it was not possible to retrieve the repository file '.print_r($file, 1));
-			}
-			else
-			{
-				if(($data = file_get_contents($file['PathName'])) === false)
-				{
-					return $this->SetError('it was not possible to read the repository file contents'.print_r($file, 1));
-				}
-				$file['Size'] = strlen($data);
-				$file['Data'] = $data;
-			}
+				return $this->SetError('it was not possible to retrieve the repository file '.$file['PathName']);
+			if(($data = file_get_contents($file['PathName'])) === false)
+				return $this->SetError('it was not possible to read the repository file contents'.$file['PathName']);
+			$file['Size'] = strlen($data);
+			$file['Data'] = $data;
         }
         next($this->repoFiles);
         $no_more_files = (key($this->repoFiles) === null);
@@ -506,19 +521,37 @@ class git_program_client_class
 
     /**
      * Get the data for the log files and store it
-     * @param $config
+     * @param $arguments
      * @return bool
      */
-    public function Log($config)
+    public function Log($arguments)
     {
-        if (!IsSet($config['File']))
-            return ($this->SetError('Log File not set'));
-		$file = $config['File'];
-		$this->OutputDebug('Get the log of file: '.$file);
-        $log_files = $this->files_manager->getLogFiles($file, true);
+		if(!IsSet($arguments['File']))
+			return($this->SetError('retrieving the log of directories is not yet supported'));
+		$file = $arguments['File'];
+		if(IsSet($arguments['Module']))
+			$module = $arguments['Module'];
+		else
+			return($this->SetError('it was not specified a valid directory to get the log'));
+		$this->OutputDebug('Log '.$file);
+		$this->log_revision = '';
+		$this->log_newer_date = 0;
+		if(IsSet($arguments['Revision']))
+		{
+			if(strlen($this->log_revision = $arguments['Revision']) != 40
+			|| strspn($this->log_revision, $this->hexdec) != 40)
+				return($this->SetError('it was not specified a valid log revision'));
+		}
+		elseif(IsSet($arguments['NewerThan']))
+		{
+			if(GetType($this->log_newer_date = strtotime($arguments['NewerThan'])) != 'integer')
+				return($this->SetError('it was not specified a valid newer than time'));
+		}
+        $log_files = $this->files_manager->getLogFiles($file, false);
         if (!IsSet($log_files))
             return $this->SetError($this->files_manager->error, $this->files_manager->error_code);
         $this->logFiles = $log_files;
+        $this->next_log_file = current($this->logFiles);
         return true;
     }
 
@@ -531,9 +564,65 @@ class git_program_client_class
      */
     public function GetNextLogFile($config, &$file, &$no_more_files)
     {
-        $file = current($this->logFiles);
-        next($this->logFiles);
-        $no_more_files = (key($this->logFiles) === null);
+        $no_more_files = ($this->next_log_file === false);
+        if($no_more_files)
+        {
+			$file = null;
+			return true;
+        }
+        $log_file = current($this->logFiles);
+		
+		$this->OutputDebug('Getting the log for file: '.$log_file['RelativeFile']);
+        $log = $this->execCommandForClient("log ".escapeshellarg($log_file['RelativeFile']));
+        if($log['exitCode'] !== 0)
+			return $this->SetError('it was not possible to get the file log of file '.$log_file['RelativeFile']);
+        $lines = explode("\n", $log['output']);
+        $revisions = array();
+        for($line = 0; $line < count($lines);)
+        {
+			if(!preg_match('/^commit ([0-9a-f]+)$/', $lines[$line], $m))
+				return $this->SetError('the log file response did not return a valid commit hash value for file '.$log_file['RelativeFile']);
+			$hash = $m[1];
+			$r = array();
+			for(++$line ; $line < count($lines) && $lines[$line] !== ''; ++$line)
+			{
+				if(!preg_match('/^([^:]+): (.+)$/', $lines[$line], $m))
+					return $this->SetError('the log file response did not return a valid header value for file '.$log_file['RelativeFile']." ".$line.' "'.$lines[$line].'" ');
+				switch($property = strtolower($m[1]))
+				{
+					case 'author':
+						$r[$property] = $m[2];
+						break;
+					case 'date':
+						$r[$property] = gmstrftime('%Y-%m-%d %H:%M:%S +0000', strtotime($m[2]));
+						break;
+				}
+			}
+			if($lines[$line] === '')
+				++$line;
+			$log = '';
+			for(; $line < count($lines) && $lines[$line] !== ''; ++$line)
+				$log .= trim($lines[$line])."\n";
+			$r['Log'] = $log;
+			if(strlen($this->log_revision))
+				$add_revision = ($this->log_revision === $hash);
+			elseif($this->log_newer_date)
+				$add_revision = (IsSet($r['date']) && $this->log_newer_date < intval(strtotime($r['date'])));
+			else
+				$add_revision = true;
+			if($add_revision)
+				$revisions[$hash] = $r;
+			if($lines[$line] === '')
+				++$line;
+		}
+		$file = array(
+			'Properties'=>array(
+				'description'=>'',
+				'Work file'=>basename($log_file['RelativeFile'])
+			),
+			'Revisions'=>$revisions
+		);
+        $this->next_log_file = next($this->logFiles);
         return true;
     }
 
