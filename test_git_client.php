@@ -38,9 +38,9 @@
 	/* Format dubug output to display with HTML pages */
 	$git->html_debug = false;
 
-	$repository = 'https://github.com/manuellemos/xmlparser.git';
+    $repository = 'https://github.com/manuellemos/gitclient.git';
 	$module = '';
-	$log_file = 'README.txt';
+	$log_file = 'test_git_client.php';
 
 	$repository = 'https://github.com/slavepens/integrity-md5-class.git';
 	$module = '';

@@ -35,9 +35,9 @@
     
     $git->temporary_directory = 'tmp';
 
-    $repository = 'https://github.com/msalsas/itransformer.git';
+    $repository = 'https://github.com/manuellemos/gitclient.git';
     $module = '';
-    $log_file = 'README.md';
+    $log_file = 'test_git_program_client.php';
 
     echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
     flush();
