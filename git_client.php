@@ -2,7 +2,7 @@
 /*
  * git_client.php
  *
- * @(#) $Id$
+ * @(#) $Id: git_client.php,v 1.51 2019/09/20 05:24:34 mlemos Exp $
  *
  */
 
@@ -12,7 +12,7 @@
 
 	<package>net.manuellemos.gitclient</package>
 
-	<version>@(#) $Id$</version>
+	<version>@(#) $Id: git_client.php,v 1.51 2019/09/20 05:24:34 mlemos Exp $</version>
 	<copyright>Copyright © (C) Manuel Lemos 2011</copyright>
 	<title>Git client</title>
 	<author>Manuel Lemos</author>
@@ -931,6 +931,8 @@ class git_client_class
 
 	Function GetNextFile($arguments, &$file, &$no_more_files)
 	{
+		$get_file_data = (!IsSet($arguments['GetFileData']) || $arguments['GetFileData']);
+		$get_file_modes = (!IsSet($arguments['GetFileModes']) || $arguments['GetFileModes']);
 		$no_more_files = 0;
 		for(;;)
 		{
@@ -1001,39 +1003,45 @@ class git_client_class
 					$path = '';
 				else
 					$path .= '/';
-				$modes = array();
-				$mode = substr($entry['mode'], -3);
-				if(strlen($mode) != 3)
-					return($this->SetError('unexpected file mode value "'.$entry['mode'].'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-				$mode_map = array(
-					'0'=>'',
-					'1'=>'x',
-					'2'=>'w',
-					'3'=>'wx',
-					'4'=>'r',
-					'5'=>'rx',
-					'6'=>'rw',
-					'7'=>'rwx'
-				);
-				for($m = 0; $m < 3; ++$m)
-				{
-					$mode_value = $mode[$m];
-					if(!IsSet($mode_map[$mode_value]))
-						return($this->SetError('unexpected file mode value "'.$mode_value.'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
-					$modes[substr('ugo', $m, 1)] = $mode_map[$mode_value];
-				}
-				if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
-					return false;
 				$file = array(
 					'Version'=>$hash,
 					'Name'=>basename($base_name),
 					'PathName'=>$this->checkout_path.$path,
 					'File'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
 					'RelativeFile'=>$this->checkout_path.$this->current_checkout_tree_path.$base_name,
-					'Mode'=>$modes,
-					'Data'=>$data,
-					'Size'=>strlen($data)
 				);
+				if($get_file_data)
+				{
+					if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
+						return false;
+					$file['Data'] = $data;
+					$file['Size'] = strlen($data);
+				}
+				if($get_file_modes)
+				{
+					$modes = array();
+					$mode = substr($entry['mode'], -3);
+					if(strlen($mode) != 3)
+						return($this->SetError('unexpected file mode value "'.$entry['mode'].'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+					$mode_map = array(
+						'0'=>'',
+						'1'=>'x',
+						'2'=>'w',
+						'3'=>'wx',
+						'4'=>'r',
+						'5'=>'rx',
+						'6'=>'rw',
+						'7'=>'rwx'
+					);
+					for($m = 0; $m < 3; ++$m)
+					{
+						$mode_value = $mode[$m];
+						if(!IsSet($mode_map[$mode_value]))
+							return($this->SetError('unexpected file mode value "'.$mode_value.'"', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+						$modes[substr('ugo', $m, 1)] = $mode_map[$mode_value];
+					}
+					$file['Mode'] = $modes;
+				}
 				Next($this->current_checkout_tree);
 				$this->current_checkout_tree_entry = Key($this->current_checkout_tree);
 				return(1);
