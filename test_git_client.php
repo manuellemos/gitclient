@@ -2,7 +2,7 @@
 /*
  * test_git_client.php
  *
- * @(#) $Id: test_git_client.php,v 1.3 2014/04/02 05:49:06 mlemos Exp $
+ * @(#) $Id: test_git_client.php,v 1.5 2019/09/20 07:22:06 mlemos Exp $
  *
  */
 
@@ -39,63 +39,8 @@
 	$git->html_debug = false;
 
     $repository = 'https://github.com/manuellemos/gitclient.git';
-	$module = '';
-	$log_file = 'test_git_client.php';
-
-	$repository = 'https://github.com/slavepens/integrity-md5-class.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/garpeer/adfly.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/jas-/jQuery.pidCrypt';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/igorescobar/nodejs-playground.git';
-	$module = 'crosswords';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/mark-rolich/RulersGuides.js.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/dyorg/Lean.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'http://git.code.sf.net/p/phpprefixer/code';
-	$module = '';
-	$log_file = 'README.txt';
-	
-	$repository = 'https://github.com/picamator/SteganographyKit.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/crocodile2u/zhandlersocket.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/niceit/S3FilesManager.git';
-	$module = '';
-	$log_file = 'index.php';
- 
-	$repository = 'https://github.com/msalsas/itransformer.git';
-	$module = '';
-	$log_file = 'README.md';
-
-	$repository = 'https://github.com/abriceno/codecard.git';
-	$module = '';
-	$log_file = 'README.md';
-	
-	$repository = 'https://github.com/cycle/orm.git';
-	$module = '';
-
-	$repository = 'https://github.com/msalsas/itransformer.git';
-	$module = '';
-	$log_file = 'README.md';
+    $module = '';
+    $log_file = 'test_git_client.php';
 
 	echo '<li><h2>Validating the Git repository</h2>', "\n", '<p>Repository: ', $repository, '</p>', "\n", '<p>Module: ', $module, '</p>', "\n";
 	flush();
@@ -143,41 +88,46 @@
 	if(strlen($git->error) == 0
 	&& $git->Connect($arguments))
 	{
+        echo '<li><h2>Checking out files from the repository '.$repository.'</h2>', "\n";
+        flush();
 		$arguments = array(
 			'Module'=>$module
 		);
 		if($git->Checkout($arguments))
 		{
-			for($files=0;;++$files)
+			$arguments = array(
+				'GetFileData'=>false,
+				'GetFileModes'=>false
+			);
+			for($files = 0;; ++$files)
 			{
-				$arguments = array(
-				);
 				if(!$git->GetNextFile($arguments, $file, $no_more_files)
 				|| $no_more_files)
 					break;
 				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 				flush();
 			}
-			echo $files.' files',"\n";
+			echo '<pre>Total of '.$files.' files</pre>',"\n";
 		}
+        echo '<li><h2>Getting the log of changes of file '.$log_file.'</h2>', "\n";
+        flush();
 		$arguments = array(
 			'Module'=>$module,
 			'File'=>$log_file,
+//			'Revision' => 'a47e98393a5740d68ff78c34d29f68e22d38b2d0',
+//			'NewerThan' => '2013-11-28 15:59:46 +0000'
 		);
-/*
 		if($git->Log($arguments))
 		{
 			for(;;)
 			{
-				$arguments = array(
-				);
+				$arguments = array();
 				if(!$git->GetNextLogFile($arguments, $file, $no_more_files)
 				|| $no_more_files)
 					break;
 				echo '<pre>', HtmlSpecialChars(print_r($file, 1)), '</pre>';
 			}
 		}
-*/
 		$git->Disconnect();
 	}
 	if(strlen($git->error))
