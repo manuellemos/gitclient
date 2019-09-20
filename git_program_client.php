@@ -264,7 +264,13 @@ class git_program_client_class
      * Contains the data for files in the repository
      * @var array
      */
-    private $repoFiles;
+    private $repository_files;
+
+    /**
+     * Count of checked out files
+     * @var array
+     */
+    private $checkout_file = 0;
 
     /**
      * Contains the data for log files in the repository
@@ -490,32 +496,42 @@ class git_program_client_class
         if (!IsSet($repository_files))
 			return $this->SetError($this->files_manager->error, $this->files_manager->error_code);
 		$this->OutputDebug('Checked out '.count($repository_files).' files.');
-        $this->repoFiles = $repository_files;
+        $this->repository_files = $repository_files;
+        $this->checkout_file = 0;
         return true;
     }
 
     /**
      * Get files from the repo
-     * @param $config
+     * @param $arguments
      * @param $file
      * @param $no_more_files
      * @return bool
      */
-    public function GetNextFile($config, &$file, &$no_more_files)
+    public function GetNextFile($arguments, &$file, &$no_more_files)
     {
-		$this->OutputDebug('Get next checked out file.');
-        $file = current($this->repoFiles);
-        if(IsSet($file))
+		$get_file_data = (!IsSet($arguments['GetFileData']) || $arguments['GetFileData']);
+		$get_file_modes = (!IsSet($arguments['GetFileModes']) || $arguments['GetFileModes']);
+        $no_more_files = ($this->checkout_file >= count($this->repository_files));
+        if(!$no_more_files)
         {
-			if(!IsSet($file['PathName']))
-				return $this->SetError('it was not possible to retrieve the repository file '.$file['PathName']);
-			if(($data = file_get_contents($file['PathName'])) === false)
-				return $this->SetError('it was not possible to read the repository file contents'.$file['PathName']);
-			$file['Size'] = strlen($data);
-			$file['Data'] = $data;
-        }
-        next($this->repoFiles);
-        $no_more_files = (key($this->repoFiles) === null);
+			$file = current($this->repository_files);
+			if(IsSet($file))
+			{
+				++$this->checkout_file;
+				$this->OutputDebug('Get next checked out file '.$this->checkout_file.' of '.count($this->repository_files));
+				if(!IsSet($file['PathName']))
+					return $this->SetError('it was not possible to retrieve the repository file '.$file['PathName']);
+				if($get_file_data)
+				{
+					if(($data = file_get_contents($file['PathName'])) === false)
+						return $this->SetError('it was not possible to read the repository file contents'.$file['PathName']);
+					$file['Size'] = strlen($data);
+					$file['Data'] = $data;
+				}
+			}
+			next($this->repository_files);
+		}
         return true;
     }
 
