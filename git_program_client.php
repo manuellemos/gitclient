@@ -617,7 +617,7 @@ class git_program_client_class
 			if($lines[$line] === '')
 				++$line;
 			$log = '';
-			for(; $line < count($lines) && $lines[$line] !== ''; ++$line)
+			for(; $line < count($lines) && $lines[$line] !== '' && strspn($lines[$line], " \t") > 0; ++$line)
 				$log .= trim($lines[$line])."\n";
 			$r['Log'] = $log;
 			if(strlen($this->log_revision))
