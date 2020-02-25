@@ -35,7 +35,7 @@
     
     $git->temporary_directory = 'tmp';
 
-    $repository = 'https://github.com/manuellemos/gitclient.git';
+    $repository = 'https://github.com/maliknaik16/icon_api.git';
     $module = '';
     $log_file = 'test_git_client.php';
 
@@ -88,7 +88,8 @@
         echo '<li><h2>Checking out files from the repository '.$repository.'</h2>', "\n";
         flush();
         $arguments = array(
-            'Module' => $module
+            'Module' => $module,
+//             'branch' => '8.x-2.x'
         );
         if($git->Checkout($arguments))
         {
