@@ -438,10 +438,19 @@ class git_client_class
 		$l = strlen($object);
 		for($d = 0; $d < $l && $object[$d] !== "\n";)
 		{
-			$s = $d + strcspn($object, ' ', $d);
-			$key = substr($object, $d, $s - $d);
-			++$s;
-			$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+			$hl = strcspn($object, ' ', $d);
+			if($hl === 0)
+			{
+				$s = $d + $hl + 1;
+				$commit['Headers'][$key] .= "\n".substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+			}
+			else
+			{
+				$s = $d + $hl;
+				$key = substr($object, $d, $s - $d);
+				++$s;
+				$commit['Headers'][$key] = substr($object, $s, ($d = $s + strcspn($object, "\n", $s)) - $s);
+			}
 			if($object[$d] === "\n")
 				++$d;
 		}
@@ -813,9 +822,14 @@ class git_client_class
 				return false;
 			if(!$this->ParseCommitObject($data, $commit))
 				return(0);
-			if(!IsSet($commit['Headers']['tree'])
-			|| !IsSet($this->checkout_objects[$commit['Headers']['tree']]))
-				return($this->SetError('the upload pack did not return a valid commit object', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			if(!IsSet($commit['Headers']['tree']))
+			{
+				return($this->SetError('the upload pack returned an invalid commit object without a tree object identifier', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			}
+			if(!IsSet($this->checkout_objects[$commit['Headers']['tree']]))
+			{
+				return($this->SetError('the upload pack returned commit object with an invalid tree object identifier';, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+			}
 			$this->commits[$hash] = $commit;
 		}
 		return(1);
@@ -827,6 +841,8 @@ class git_client_class
 			$tree = $this->trees[$hash];
 		else
 		{
+			if(!IsSet($this->checkout_objects[$hash]))
+				return($this->SetError('the object '.$hash.' of type tree is missing'));
 			if($this->checkout_objects[$hash]['type'] !== 'tree')
 				return($this->SetError('the object '.$hash.' is not of type tree'));
 			if(!$this->GetObjectData($this->checkout_objects[$hash], $data))
@@ -1159,10 +1175,11 @@ class git_client_class
 		$first = 1;
 		$revisions = array();
 		$got_revision = 0;
+		
 		for(;;)
 		{
 			if(!$this->GetCommitObject($next_commit, $commit))
-				return(1);
+				return(0);
 			if($first)
 			{
 				$file_name = $file;
