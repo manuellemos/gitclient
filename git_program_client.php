@@ -382,24 +382,12 @@ class git_program_client_class
             return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to start the git command'];
 		}
 		$pipe = $pipes[1];
-/*
-        $command = "export GIT_TERMINAL_PROMPT=0; cd \"{$this->tmpLocation}\" && {$this->client} {$action} 2>&1";
-		$this->OutputDebug('Executing Git command: '.$command);
-        if (!($pipe = popen($command, 'r'))) {
-			$code = -3;
-			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
-            return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to start the git command'];
-        }
-*/
         for ($output = ''; !feof($pipe);) {
             if (!($data = fread($pipe, 8000))) {
                 if (feof($pipe))
                     break;
 				fclose($pipe);
 				proc_close($process);
-/*
-                pclose($pipe);
-*/
                 $code = -2;
 				error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
                 return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to read the git command output'];
@@ -413,13 +401,6 @@ class git_program_client_class
             $e = error_get_last();
             $error = $e['message'];
         }
-/*
-        $code = pclose($pipe);
-        if ($code === -1) {
-            $e = error_get_last();
-            $error = $e['message'];
-        }
-*/
         if($code !== 0)
 			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
         return ['output' => $output, 'exitCode' => $code, 'error' => $error];
