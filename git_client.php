@@ -828,7 +828,7 @@ class git_client_class
 			}
 			if(!IsSet($this->checkout_objects[$commit['Headers']['tree']]))
 			{
-				return($this->SetError('the upload pack returned commit object with an invalid tree object identifier';, GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
+				return($this->SetError('the upload pack returned commit object with an invalid tree object identifier', GIT_REPOSITORY_ERROR_COMMUNICATION_FAILURE));
 			}
 			$this->commits[$hash] = $commit;
 		}
