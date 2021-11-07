@@ -342,8 +342,18 @@ class git_program_client_class
 		$this->OutputDebug('Validating repository: '.$repository);
         $data = $this->execCommandForClient("ls-remote ".escapeshellarg($repository));
         $error_code = $data['exitCode'];
-        $this->error = $error_code !== 0 ? $error_code : null;
-        return $data['exitCode'] === 0;
+        switch($error_code)
+        {
+			case 0:
+				break;
+			case 128:
+				$error_code = REPOSITORY_ERROR_CANNOT_CHECKOUT;
+				return true;
+			default:
+				$this->SetError($data['error'].': '.$error_code, GIT_REPOSITORY_ERROR_CANNOT_CONNECT);
+				return false;
+		}
+        return $error_code === 0;
     }
 
     /**
@@ -353,26 +363,65 @@ class git_program_client_class
      */
     public function execCommandForClient($action)
     {
-        $command = "cd \"{$this->tmpLocation}\" && {$this->client} {$action} 2>&1";
+		$command = "{$this->client} {$action}";
+		$descriptors = array(
+			array("pipe", "r"),
+			array("pipe", "w"),
+			2 =>array("pipe", "a")
+		);
+		$current_directory = $this->tmpLocation;
+		$variables = array(
+			'GIT_TERMINAL_PROMPT' => '0'
+		);
+		$this->OutputDebug('Executing Git command: '.$command);
+		$process = proc_open($command, $descriptors, $pipes, $current_directory, $variables);
+		if(!is_resource($process))
+		{
+			$code = -3;
+			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+            return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to start the git command'];
+		}
+		$pipe = $pipes[1];
+/*
+        $command = "export GIT_TERMINAL_PROMPT=0; cd \"{$this->tmpLocation}\" && {$this->client} {$action} 2>&1";
 		$this->OutputDebug('Executing Git command: '.$command);
         if (!($pipe = popen($command, 'r'))) {
-            return ['output' => '', 'exitCode' => -3, 'error' => 'it was not possible to start the git command'];
+			$code = -3;
+			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+            return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to start the git command'];
         }
+*/
         for ($output = ''; !feof($pipe);) {
             if (!($data = fread($pipe, 8000))) {
                 if (feof($pipe))
                     break;
+				fclose($pipe);
+				proc_close($process);
+/*
                 pclose($pipe);
-                return ['output' => '', 'exitCode' => -2, 'error' => 'it was not possible to read the git command output'];
+*/
+                $code = -2;
+				error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+                return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to read the git command output'];
             }
             $output .= $data;
         }
         $error = '';
+        fclose($pipe);
+        $code = proc_close($process);
+        if ($code === -1) {
+            $e = error_get_last();
+            $error = $e['message'];
+        }
+/*
         $code = pclose($pipe);
         if ($code === -1) {
             $e = error_get_last();
             $error = $e['message'];
         }
+*/
+        if($code !== 0)
+			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
         return ['output' => $output, 'exitCode' => $code, 'error' => $error];
     }
 
@@ -582,12 +631,16 @@ class git_program_client_class
      */
     public function GetNextLogFile($config, &$file, &$no_more_files)
     {
+//		if($debug)
+		error_log(__FILE__.' '.__LINE__);
         $no_more_files = ($this->next_log_file === false);
         if($no_more_files)
         {
 			$file = null;
 			return true;
         }
+//		if($debug)
+		error_log(__FILE__.' '.__LINE__);
         $log_file = current($this->logFiles);
 		
 		$this->OutputDebug('Getting the log for file: '.$log_file['RelativeFile']);
