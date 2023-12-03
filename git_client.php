@@ -938,7 +938,7 @@ class git_client_class
 				return($this->SetError('it was not found the directory tree path '.$module_path[$path], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
 			++$path;
 		}
-		$this->checkout_path = (count($module_path) ? implode($module_path, '/').'/' : '');
+		$this->checkout_path = (count($module_path) ? implode('/', $module_path).'/' : '');
 		$this->checkout_trees[] = array('hash'=>$hash, 'path'=>'');
 		$this->checkout_tree = 0;
 		$this->current_checkout_tree = array();
