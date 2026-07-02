@@ -518,10 +518,10 @@ class git_program_client_class
     public function Checkout($config)
     {
 		$this->OutputDebug('Checkout...');
-		if($config['branch']) {
-            $clone = $this->execCommandForClient("checkout ".escapeshellarg($config['branch']));
+		if(IsSet($config['Module'])) {
+            $clone = $this->execCommandForClient("checkout ".escapeshellarg($config['Module']));
             if ($clone['exitCode'] !== 0) {
-                return ($this->SetError("Unable to checkout the branch {$config['branch']}. " . $clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
+                return ($this->SetError("Unable to checkout the branch {$config['Module']}. " . $clone['exitCode'], GIT_REPOSITORY_ERROR_CANNOT_CHECKOUT));
             }
         }
         $repository_files = $this->files_manager->getRepoFiles(false);
