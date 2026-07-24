@@ -378,7 +378,7 @@ class git_program_client_class
 		if(!is_resource($process))
 		{
 			$code = -3;
-			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+			$this->OutputDebug('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
             return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to start the git command'];
 		}
 		$pipe = $pipes[1];
@@ -389,7 +389,7 @@ class git_program_client_class
 				fclose($pipe);
 				proc_close($process);
                 $code = -2;
-				error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+				$this->OutputDebug('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
                 return ['output' => '', 'exitCode' => $code, 'error' => 'it was not possible to read the git command output'];
             }
             $output .= $data;
@@ -402,7 +402,7 @@ class git_program_client_class
             $error = $e['message'];
         }
         if($code !== 0)
-			error_log('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
+			$this->OutputDebug('Git command failed. Command: '.$command.' Code: '.$code.' File: '.__FILE__.' Line: '.__LINE__);
         return ['output' => $output, 'exitCode' => $code, 'error' => $error];
     }
 
@@ -613,16 +613,12 @@ class git_program_client_class
      */
     public function GetNextLogFile($config, &$file, &$no_more_files)
     {
-//		if($debug)
-		error_log(__FILE__.' '.__LINE__);
         $no_more_files = ($this->next_log_file === false);
         if($no_more_files)
         {
 			$file = null;
 			return true;
         }
-//		if($debug)
-		error_log(__FILE__.' '.__LINE__);
         $log_file = current($this->logFiles);
 		
 		$this->OutputDebug('Getting the log for file: '.$log_file['RelativeFile']);
